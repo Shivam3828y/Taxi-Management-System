@@ -929,27 +929,7 @@ if ($result) {
             </div>
 
 
-            <!-- MAINTENANCE -->
-
-            <div class="dashboard-card">
-
-                <h3>
-                    Maintenance
-                </h3>
-
-                <p>
-
-                    Track taxi servicing, repairs
-                    and maintenance records.
-
-                </p>
-
-                <p class="coming-soon">
-                    Coming soon
-                </p>
-
-            </div>
-
+           
 
             <!-- FINES -->
 
@@ -978,73 +958,7 @@ if ($result) {
     </section>
 
 
-    <!-- =================================================
-         WORKFLOW
-    ================================================= -->
-
-    <section class="workflow">
-
-        <h2>
-            Driver & Taxi Workflow
-        </h2>
-
-
-        <ol>
-
-            <li>
-                Driver submits a registration
-                application.
-            </li>
-
-
-            <li>
-                Admin reviews and verifies
-                the driver.
-            </li>
-
-
-            <li>
-                Admin adds and manages taxis.
-            </li>
-
-
-            <li>
-                Admin assigns an available taxi
-                to a verified driver.
-            </li>
-
-
-            <li>
-                Admin creates the rental agreement
-                for the assignment.
-            </li>
-
-
-            <li>
-                Driver logs into the driver portal
-                and accepts the agreement.
-            </li>
-
-
-            <li>
-                Driver can view the assigned taxi,
-                rent and payment records.
-            </li>
-
-
-            <li>
-                Payment records can be managed
-                through the admin payment section.
-            </li>
-
-
-        </ol>
-
-    </section>
-
-
-</main>
-
+    
 
 <!-- ================================================= -->
 <!-- FOOTER -->

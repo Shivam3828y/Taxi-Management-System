@@ -409,9 +409,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             </a>
 
 
-            <a href="../driver/login.php">
-                Driver Login
-            </a>
 
         </div>
 
