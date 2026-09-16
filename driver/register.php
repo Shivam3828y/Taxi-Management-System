@@ -1,8 +1,5 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 
 require_once "../config.php";
@@ -17,11 +14,27 @@ $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
+    csrf_verify();
+
     $name = trim($_POST["name"] ?? "");
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
     $address = trim($_POST["address"] ?? "");
-    $driving_license = trim($_POST["driving_license"] ?? "");
+    $driving_license = trim(
+        $_POST["driving_license"] ?? ""
+    );
+
+    $document_type = trim(
+        $_POST["document_type"] ?? ""
+    );
+
+    $document_number = trim(
+        $_POST["document_number"] ?? ""
+    );
+
+    $password = (string) ($_POST["password"] ?? "");
+    $confirm_password = (string) ($_POST["confirm_password"] ?? "");
+
     $terms = isset($_POST["terms"]);
 
 
@@ -33,31 +46,42 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $name === "" ||
         $phone === "" ||
         $address === "" ||
-        $driving_license === ""
+        $driving_license === "" ||
+        $document_type === "" ||
+        $document_number === "" ||
+        $password === ""
     ) {
 
-        $error = "Please fill all required fields.";
+        $error =
+            "Please fill all required fields.";
+
+    } elseif (strlen($password) < 8) {
+
+        $error =
+            "Password must be at least 8 characters.";
+
+    } elseif ($password !== $confirm_password) {
+
+        $error =
+            "Passwords do not match.";
 
     } elseif (!$terms) {
 
-        $error = "Please accept the declaration.";
-
-    } elseif (!preg_match("/^[0-9]{10}$/", $phone)) {
-
-        $error = "Please enter a valid 10-digit phone number.";
+        $error =
+            "Please accept the declaration.";
 
     } else {
 
 
-        // =================================================
+        // =============================================
         // CHECK EXISTING DRIVER
-        // =================================================
+        // =============================================
 
         $check_sql = "
             SELECT id
             FROM drivers
             WHERE phone = ?
-               OR driving_license = ?
+            OR driving_license = ?
             LIMIT 1
         ";
 
@@ -104,9 +128,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } else {
 
 
-                // =================================================
-                // INSERT DRIVER
-                // =================================================
+                // =====================================
+                // REGISTER DRIVER
+                // =====================================
+
+                $password_hash = hash_password($password);
 
                 $insert_sql = "
                     INSERT INTO drivers
@@ -116,10 +142,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         email,
                         address,
                         driving_license,
+                        document_type,
+                        document_number,
+                        password,
                         status
                     )
                     VALUES
-                    (?, ?, ?, ?, ?, 'Pending')
+                    (
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        'Pending'
+                    )
                 ";
 
 
@@ -139,12 +178,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                     mysqli_stmt_bind_param(
                         $insert_stmt,
-                        "sssss",
+                        "ssssssss",
                         $name,
                         $phone,
                         $email,
                         $address,
-                        $driving_license
+                        $driving_license,
+                        $document_type,
+                        $document_number,
+                        $password_hash
                     );
 
 
@@ -155,31 +197,35 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     ) {
 
                         $message =
-                            "Driver registration submitted successfully. "
-                            . "Please wait for admin verification.";
-
-                        $_POST = [];
+                            "Driver application submitted successfully. "
+                            . "Your application is now pending admin verification.";
 
                     } else {
 
                         $error =
                             "Registration failed: "
                             . mysqli_error($conn);
+
                     }
 
 
                     mysqli_stmt_close(
                         $insert_stmt
                     );
+
                 }
+
             }
 
 
             mysqli_stmt_close(
                 $check_stmt
             );
+
         }
+
     }
+
 }
 
 ?>
@@ -199,89 +245,224 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     >
 
     <title>
-        Driver Registration - Taxi Management System
+        Driver Registration
     </title>
+
 
     <link
         rel="stylesheet"
         href="../css/style.css"
     >
 
+
     <style>
 
         .register-container {
+
             max-width: 750px;
+
             margin: 30px auto;
+
             padding: 20px;
+
         }
+
 
         .form-card {
+
             border: 1px solid #ddd;
+
             border-radius: 10px;
+
             padding: 25px;
+
             background: #fff;
+
         }
+
 
         .form-section {
-            margin-bottom: 25px;
+
+            margin-bottom: 30px;
+
             padding-bottom: 20px;
+
             border-bottom: 1px solid #ddd;
+
         }
+
+
+        .form-section:last-child {
+
+            border-bottom: none;
+
+        }
+
+
+        .form-section h3 {
+
+            margin-bottom: 15px;
+
+        }
+
 
         .form-group {
+
             margin-bottom: 15px;
+
         }
+
 
         .form-group label {
+
             display: block;
+
             margin-bottom: 6px;
+
             font-weight: bold;
+
         }
+
 
         .form-group input,
-        .form-group textarea {
+
+        .form-group textarea,
+
+        .form-group select {
+
             width: 100%;
+
             box-sizing: border-box;
+
             padding: 10px;
+
         }
+
 
         .form-group textarea {
+
             min-height: 100px;
+
             resize: vertical;
+
         }
 
-        .declaration {
-            display: flex;
-            gap: 10px;
-            align-items: flex-start;
+
+        .required {
+
+            color: #b91c1c;
+
         }
 
-        .submit-button {
-            padding: 12px 20px;
-            border: none;
-            border-radius: 6px;
-            background: #333;
-            color: white;
-            cursor: pointer;
-        }
 
         .success-message {
-            color: green;
-            margin-bottom: 15px;
+
+            padding: 12px;
+
+            margin-bottom: 20px;
+
+            background: #f0fdf4;
+
+            border: 1px solid #86efac;
+
+            color: #166534;
+
+            border-radius: 6px;
+
         }
+
 
         .error-message {
-            color: #b91c1c;
-            margin-bottom: 15px;
+
+            padding: 12px;
+
+            margin-bottom: 20px;
+
+            background: #fef2f2;
+
+            border: 1px solid #fca5a5;
+
+            color: #991b1b;
+
+            border-radius: 6px;
+
         }
+
+
+        .declaration {
+
+            display: flex;
+
+            gap: 10px;
+
+            align-items: flex-start;
+
+            margin-top: 15px;
+
+        }
+
+
+        .declaration input {
+
+            margin-top: 4px;
+
+        }
+
+
+        .submit-button {
+
+            width: 100%;
+
+            padding: 13px;
+
+            border: none;
+
+            border-radius: 6px;
+
+            cursor: pointer;
+
+            font-size: 16px;
+
+        }
+
 
         .register-links {
+
             margin-top: 20px;
+
+            text-align: center;
+
         }
 
+
         .register-links a {
-            margin-right: 15px;
+
+            margin: 0 10px;
+
         }
+
+
+        .process-box {
+
+            padding: 15px;
+
+            margin-bottom: 20px;
+
+            border-radius: 8px;
+
+            background: #f8fafc;
+
+            border: 1px solid #e2e8f0;
+
+        }
+
+
+        .process-box ol {
+
+            margin-bottom: 0;
+
+        }
+
 
     </style>
 
@@ -291,58 +472,146 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <body>
 
 
+<!-- ================================================= -->
+<!-- HEADER -->
+<!-- ================================================= -->
+
 <header>
 
     <h1>
         Taxi Management System
     </h1>
 
+
+    <nav>
+
+        <a href="../index2.php">
+            Home
+        </a>
+
+        <a href="login.php">
+            Driver Login
+        </a>
+
+        <a href="../admin/login.php">
+            Admin Login
+        </a>
+
+    </nav>
+
 </header>
 
 
-<main class="register-container">
+<!-- ================================================= -->
+<!-- MAIN -->
+<!-- ================================================= -->
 
-    <section>
+<main>
+
+
+    <section class="register-container">
+
 
         <h2>
-            Driver Registration
+            Driver Registration / Application
         </h2>
 
+
         <p>
-            Register as a driver to apply for a taxi assignment.
+            Submit your details for verification and
+            taxi assignment.
         </p>
 
 
+        <!-- ========================================= -->
+        <!-- PROCESS -->
+        <!-- ========================================= -->
+
+        <div class="process-box">
+
+            <strong>
+                Registration Process
+            </strong>
+
+            <ol>
+
+                <li>
+                    Fill in your driver information.
+                </li>
+
+                <li>
+                    Submit the application.
+                </li>
+
+                <li>
+                    Admin verifies your information.
+                </li>
+
+                <li>
+                    After verification, admin can assign
+                    an available taxi.
+                </li>
+
+                <li>
+                    Admin creates the taxi agreement.
+                </li>
+
+                <li>
+                    Agreement appears in your driver portal.
+                </li>
+
+            </ol>
+
+        </div>
+
+
+        <!-- ========================================= -->
+        <!-- MESSAGES -->
+        <!-- ========================================= -->
+
         <?php if ($message !== ""): ?>
 
-            <p class="success-message">
+            <div class="success-message">
 
                 <?php
-                echo htmlspecialchars($message);
+                echo htmlspecialchars(
+                    $message
+                );
                 ?>
 
-            </p>
+            </div>
 
         <?php endif; ?>
 
 
         <?php if ($error !== ""): ?>
 
-            <p class="error-message">
+            <div class="error-message">
 
                 <?php
-                echo htmlspecialchars($error);
+                echo htmlspecialchars(
+                    $error
+                );
                 ?>
 
-            </p>
+            </div>
 
         <?php endif; ?>
 
 
+        <!-- ========================================= -->
+        <!-- FORM -->
+        <!-- ========================================= -->
+
         <div class="form-card">
 
-            <form method="POST">
 
+            <form
+                method="POST"
+                action=""
+            >
+
+                <?php csrf_field(); ?>
 
                 <!-- ================================= -->
                 <!-- PERSONAL INFORMATION -->
@@ -358,7 +627,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     <div class="form-group">
 
                         <label for="name">
-                            Full Name *
+
+                            Full Name
+                            <span class="required">*</span>
+
                         </label>
 
                         <input
@@ -379,14 +651,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     <div class="form-group">
 
                         <label for="phone">
-                            Phone Number *
+
+                            Phone Number
+                            <span class="required">*</span>
+
                         </label>
 
                         <input
-                            type="text"
+                            type="tel"
                             id="phone"
                             name="phone"
-                            maxlength="10"
                             value="<?php
                                 echo htmlspecialchars(
                                     $_POST["phone"] ?? ""
@@ -421,7 +695,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     <div class="form-group">
 
                         <label for="address">
-                            Address *
+
+                            Address
+                            <span class="required">*</span>
+
                         </label>
 
                         <textarea
@@ -446,14 +723,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <div class="form-section">
 
                     <h3>
-                        2. Driving License
+                        2. Driving Licence Details
                     </h3>
 
 
                     <div class="form-group">
 
                         <label for="driving_license">
-                            Driving License Number *
+
+                            Driving Licence Number
+                            <span class="required">*</span>
+
                         </label>
 
                         <input
@@ -462,7 +742,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             name="driving_license"
                             value="<?php
                                 echo htmlspecialchars(
-                                    $_POST["driving_license"] ?? ""
+                                    $_POST[
+                                        "driving_license"
+                                    ] ?? ""
                                 );
                             ?>"
                             required
@@ -474,19 +756,166 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
                 <!-- ================================= -->
-                <!-- ADMIN VERIFICATION -->
+                <!-- DOCUMENT INFORMATION -->
                 <!-- ================================= -->
 
                 <div class="form-section">
 
                     <h3>
-                        3. Verification
+                        3. Document Information
                     </h3>
 
+
+                    <div class="form-group">
+
+                        <label for="document_type">
+
+                            Identity Document Type
+                            <span class="required">*</span>
+
+                        </label>
+
+
+                        <select
+                            id="document_type"
+                            name="document_type"
+                            required
+                        >
+
+                            <option value="">
+                                Select Document
+                            </option>
+
+                            <option
+                                value="Aadhaar"
+                                <?php
+                                if (
+                                    ($_POST[
+                                        "document_type"
+                                    ] ?? "") === "Aadhaar"
+                                ) {
+                                    echo "selected";
+                                }
+                                ?>
+                            >
+                                Aadhaar
+                            </option>
+
+                            <option
+                                value="PAN"
+                                <?php
+                                if (
+                                    ($_POST[
+                                        "document_type"
+                                    ] ?? "") === "PAN"
+                                ) {
+                                    echo "selected";
+                                }
+                                ?>
+                            >
+                                PAN
+                            </option>
+
+                            <option
+                                value="Voter ID"
+                                <?php
+                                if (
+                                    ($_POST[
+                                        "document_type"
+                                    ] ?? "") === "Voter ID"
+                                ) {
+                                    echo "selected";
+                                }
+                                ?>
+                            >
+                                Voter ID
+                            </option>
+
+                        </select>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="document_number">
+
+                            Document Number
+                            <span class="required">*</span>
+
+                        </label>
+
+                        <input
+                            type="text"
+                            id="document_number"
+                            name="document_number"
+                            value="<?php
+                                echo htmlspecialchars(
+                                    $_POST[
+                                        "document_number"
+                                    ] ?? ""
+                                );
+                            ?>"
+                            required
+                        >
+
+                    </div>
+
+
                     <p>
-                        Your registration will be reviewed
-                        and verified by the administrator.
+                        Admin will verify the submitted
+                        information before approving the
+                        driver application.
                     </p>
+
+                </div>
+
+
+                <!-- ================================= -->
+                <!-- ACCOUNT PASSWORD -->
+                <!-- ================================= -->
+
+                <div class="form-section">
+
+                    <h3>
+                        Account Password
+                    </h3>
+
+                    <div class="form-group">
+
+                        <label for="password">
+                            Password
+                            <span class="required">*</span>
+                        </label>
+
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            autocomplete="new-password"
+                            minlength="8"
+                            required
+                        >
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label for="confirm_password">
+                            Confirm Password
+                            <span class="required">*</span>
+                        </label>
+
+                        <input
+                            type="password"
+                            id="confirm_password"
+                            name="confirm_password"
+                            autocomplete="new-password"
+                            minlength="8"
+                            required
+                        >
+
+                    </div>
 
                 </div>
 
@@ -513,9 +942,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         <span>
                             I confirm that the information
                             provided by me is correct and
-                            understand that my application
+                            I understand that my application
                             will be reviewed by the admin
-                            before I receive a taxi assignment.
+                            before I can receive a taxi
+                            assignment.
                         </span>
 
                     </label>
@@ -540,11 +970,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         </div>
 
 
+        <!-- ========================================= -->
+        <!-- LINKS -->
+        <!-- ========================================= -->
+
         <div class="register-links">
 
             <a href="login.php">
                 Already Registered? Driver Login
             </a>
+
 
             <a href="../index2.php">
                 Back to Home
@@ -552,10 +987,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         </div>
 
+
     </section>
 
 </main>
 
+
+<!-- ================================================= -->
+<!-- FOOTER -->
+<!-- ================================================= -->
 
 <footer>
 

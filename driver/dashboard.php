@@ -1,23 +1,13 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 
-require_once "../config.php";
-
-
-// =====================================================
-// AUTHENTICATION
-// =====================================================
-
 if (!isset($_SESSION["driver_id"])) {
-
     header("Location: login.php");
     exit;
-
 }
+
+require_once "../config.php";
 
 $driver_id = (int) $_SESSION["driver_id"];
 
@@ -30,76 +20,54 @@ $error = "";
 // =====================================================
 
 if (
-    $_SERVER["REQUEST_METHOD"] === "POST" &&
-    isset($_POST["accept_agreement"])
+    $_SERVER["REQUEST_METHOD"] === "POST"
+    && isset($_POST["accept_agreement"])
 ) {
 
-    $agreement_id = (int) (
-        $_POST["agreement_id"] ?? 0
-    );
+    csrf_verify();
 
+    $agreement_id = (int) ($_POST["agreement_id"] ?? 0);
 
-    if ($agreement_id <= 0) {
+    if ($agreement_id > 0) {
 
-        $error = "Invalid agreement.";
-
-    } else {
-
-        /*
-         * Agreement can only be accepted if:
-         *
-         * 1. Agreement belongs to an active assignment
-         * 2. Assignment belongs to logged-in driver
-         * 3. Agreement is active
-         * 4. Agreement has not already been accepted
-         */
-
-        $sql = "
-            UPDATE agreements AS a
-
-            INNER JOIN assignments AS ass
-                ON a.assignment_id = ass.id
-
+        $accept_sql = "
+            UPDATE agreements
             SET
-                a.accepted = 1,
-                a.accepted_at = NOW()
-
-            WHERE a.id = ?
-            AND a.status = 'Active'
-            AND a.accepted = 0
-
-            AND ass.driver_id = ?
-            AND ass.status = 'Active'
+                accepted = 1,
+                accepted_at = NOW()
+            WHERE id = ?
+            AND status = 'Active'
+            AND accepted = 0
+            AND assignment_id IN (
+                SELECT id
+                FROM assignments
+                WHERE driver_id = ?
+                AND status = 'Active'
+            )
         ";
 
-
-        $stmt = mysqli_prepare(
+        $accept_stmt = mysqli_prepare(
             $conn,
-            $sql
+            $accept_sql
         );
 
-
-        if (!$stmt) {
-
-            $error =
-                "Database error: "
-                . mysqli_error($conn);
-
-        } else {
+        if ($accept_stmt) {
 
             mysqli_stmt_bind_param(
-                $stmt,
+                $accept_stmt,
                 "ii",
                 $agreement_id,
                 $driver_id
             );
 
-
-            mysqli_stmt_execute($stmt);
-
+            mysqli_stmt_execute(
+                $accept_stmt
+            );
 
             if (
-                mysqli_stmt_affected_rows($stmt) > 0
+                mysqli_stmt_affected_rows(
+                    $accept_stmt
+                ) > 0
             ) {
 
                 $message =
@@ -108,18 +76,21 @@ if (
             } else {
 
                 $error =
-                    "Agreement could not be accepted. "
-                    . "It may already be accepted or inactive.";
+                    "Agreement could not be accepted.";
 
             }
 
+            mysqli_stmt_close(
+                $accept_stmt
+            );
 
-            mysqli_stmt_close($stmt);
+        } else {
 
+            $error =
+                "Database error: "
+                . mysqli_error($conn);
         }
-
     }
-
 }
 
 
@@ -127,7 +98,7 @@ if (
 // DRIVER INFORMATION
 // =====================================================
 
-$sql = "
+$driver_sql = "
     SELECT
         id,
         name,
@@ -136,64 +107,47 @@ $sql = "
         address,
         driving_license,
         status
-
     FROM drivers
-
     WHERE id = ?
-
     LIMIT 1
 ";
 
-
-$stmt = mysqli_prepare(
+$driver_stmt = mysqli_prepare(
     $conn,
-    $sql
+    $driver_sql
 );
 
-
-if (!$stmt) {
-
-    die(
-        "Database error: "
-        . mysqli_error($conn)
-    );
-
-}
-
-
 mysqli_stmt_bind_param(
-    $stmt,
+    $driver_stmt,
     "i",
     $driver_id
 );
 
+mysqli_stmt_execute(
+    $driver_stmt
+);
 
-mysqli_stmt_execute($stmt);
+$driver_result =
+    mysqli_stmt_get_result(
+        $driver_stmt
+    );
 
+$driver = mysqli_fetch_assoc(
+    $driver_result
+);
 
-$result =
-    mysqli_stmt_get_result($stmt);
+mysqli_stmt_close(
+    $driver_stmt
+);
 
-
-$driver =
-    mysqli_fetch_assoc($result);
-
-
-mysqli_stmt_close($stmt);
-
-
-// =====================================================
-// DRIVER NOT FOUND
-// =====================================================
 
 if (!$driver) {
 
-    session_unset();
     session_destroy();
 
     header("Location: login.php");
-    exit;
 
+    exit;
 }
 
 
@@ -201,27 +155,17 @@ if (!$driver) {
 // ACTIVE ASSIGNMENT
 // =====================================================
 
-$assignment = null;
-
-$sql = "
+$assignment_sql = "
     SELECT
-
         assignments.id AS assignment_id,
-
         assignments.assigned_at,
-
         assignments.status AS assignment_status,
 
         taxis.id AS taxi_id,
-
         taxis.brand,
-
         taxis.model,
-
         taxis.registration_number,
-
         taxis.rent,
-
         taxis.status AS taxi_status
 
     FROM assignments
@@ -230,7 +174,6 @@ $sql = "
         ON assignments.taxi_id = taxis.id
 
     WHERE assignments.driver_id = ?
-
     AND assignments.status = 'Active'
 
     ORDER BY assignments.id DESC
@@ -238,42 +181,34 @@ $sql = "
     LIMIT 1
 ";
 
-
-$stmt = mysqli_prepare(
+$assignment_stmt = mysqli_prepare(
     $conn,
-    $sql
+    $assignment_sql
 );
 
-
-if (!$stmt) {
-
-    die(
-        "Database error: "
-        . mysqli_error($conn)
-    );
-
-}
-
-
 mysqli_stmt_bind_param(
-    $stmt,
+    $assignment_stmt,
     "i",
     $driver_id
 );
 
+mysqli_stmt_execute(
+    $assignment_stmt
+);
 
-mysqli_stmt_execute($stmt);
-
-
-$result =
-    mysqli_stmt_get_result($stmt);
-
+$assignment_result =
+    mysqli_stmt_get_result(
+        $assignment_stmt
+    );
 
 $assignment =
-    mysqli_fetch_assoc($result);
+    mysqli_fetch_assoc(
+        $assignment_result
+    );
 
-
-mysqli_stmt_close($stmt);
+mysqli_stmt_close(
+    $assignment_stmt
+);
 
 
 // =====================================================
@@ -282,78 +217,55 @@ mysqli_stmt_close($stmt);
 
 $agreement = null;
 
-
 if ($assignment) {
 
-    $sql = "
+    $agreement_sql = "
         SELECT
-
             id,
-
             start_date,
-
             end_date,
-
             rent,
-
             status,
-
             accepted,
-
             accepted_at
-
         FROM agreements
-
         WHERE assignment_id = ?
-
         AND status = 'Active'
-
         ORDER BY id DESC
-
         LIMIT 1
     ";
 
-
-    $stmt = mysqli_prepare(
+    $agreement_stmt = mysqli_prepare(
         $conn,
-        $sql
+        $agreement_sql
     );
 
-
-    if (!$stmt) {
-
-        die(
-            "Database error: "
-            . mysqli_error($conn)
-        );
-
-    }
-
-
     mysqli_stmt_bind_param(
-        $stmt,
+        $agreement_stmt,
         "i",
         $assignment["assignment_id"]
     );
 
+    mysqli_stmt_execute(
+        $agreement_stmt
+    );
 
-    mysqli_stmt_execute($stmt);
-
-
-    $result =
-        mysqli_stmt_get_result($stmt);
-
+    $agreement_result =
+        mysqli_stmt_get_result(
+            $agreement_stmt
+        );
 
     $agreement =
-        mysqli_fetch_assoc($result);
+        mysqli_fetch_assoc(
+            $agreement_result
+        );
 
-
-    mysqli_stmt_close($stmt);
-
+    mysqli_stmt_close(
+        $agreement_stmt
+    );
 }
 
 ?>
-
 
 <!DOCTYPE html>
 
@@ -369,28 +281,35 @@ if ($assignment) {
     >
 
     <title>
-        Driver Dashboard
+        Driver Dashboard - Taxi Management System
     </title>
-
 
     <link
         rel="stylesheet"
         href="../css/style.css"
     >
 
-
     <style>
 
         .dashboard-container {
-
-            max-width: 1100px;
-
+            max-width: 1200px;
             margin: 30px auto;
-
-            padding: 0 20px;
-
         }
 
+        .dashboard-grid {
+
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(250px, 1fr)
+                );
+
+            gap: 20px;
+
+            margin-top: 20px;
+        }
 
         .dashboard-card {
 
@@ -400,12 +319,9 @@ if ($assignment) {
 
             padding: 20px;
 
-            margin-bottom: 25px;
-
             background: #fff;
 
         }
-
 
         .pass-card {
 
@@ -417,10 +333,7 @@ if ($assignment) {
 
             background: #f8f8f8;
 
-            margin-bottom: 25px;
-
         }
-
 
         .pass-title {
 
@@ -432,7 +345,6 @@ if ($assignment) {
 
         }
 
-
         .pass-row {
 
             display: flex;
@@ -441,139 +353,59 @@ if ($assignment) {
 
             gap: 20px;
 
-            padding: 12px 0;
+            padding: 10px 0;
 
             border-bottom: 1px solid #ddd;
 
         }
 
-
-        .pass-row:last-child {
-
-            border-bottom: none;
-
-        }
-
-
         .status {
-
             font-weight: bold;
-
         }
-
 
         .verified {
-
-            color: #15803d;
-
+            color: green;
         }
-
 
         .pending {
-
             color: #b45309;
-
         }
-
 
         .inactive {
-
             color: #b91c1c;
-
         }
-
 
         .accepted {
-
-            color: #15803d;
-
+            color: green;
             font-weight: bold;
-
         }
-
 
         .waiting {
-
             color: #b45309;
-
             font-weight: bold;
-
         }
-
-
-        .success-message {
-
-            padding: 12px;
-
-            margin-bottom: 20px;
-
-            border-radius: 6px;
-
-            background: #f0fdf4;
-
-            border: 1px solid #86efac;
-
-            color: #166534;
-
-        }
-
 
         .error-message {
-
-            padding: 12px;
-
-            margin-bottom: 20px;
-
-            border-radius: 6px;
-
-            background: #fef2f2;
-
-            border: 1px solid #fca5a5;
-
-            color: #991b1b;
-
+            color: #b91c1c;
+            margin-bottom: 15px;
         }
 
-
-        .agreement-box {
-
-            border: 2px solid #444;
-
-            border-radius: 10px;
-
-            padding: 20px;
-
-            background: #fafafa;
-
+        .success-message {
+            color: #15803d;
+            margin-bottom: 15px;
         }
 
-
-        .agreement-warning {
-
-            margin-top: 20px;
-
-            padding: 15px;
-
-            background: #fff7ed;
-
-            border: 1px solid #fed7aa;
-
-            border-radius: 6px;
-
-        }
-
-
-        .button {
+        .dashboard-button {
 
             display: inline-block;
 
-            margin-top: 15px;
+            margin-top: 10px;
 
-            padding: 10px 16px;
-
-            border-radius: 6px;
+            padding: 10px 15px;
 
             border: 1px solid #333;
+
+            border-radius: 6px;
 
             text-decoration: none;
 
@@ -582,7 +414,6 @@ if ($assignment) {
             background: #fff;
 
         }
-
 
         .accept-button {
 
@@ -598,25 +429,33 @@ if ($assignment) {
 
             cursor: pointer;
 
-            margin-top: 10px;
+            margin-top: 15px;
 
         }
 
+        .agreement-box {
 
-        .empty-box {
-
-            padding: 20px;
-
-            border: 1px solid #ddd;
+            border: 2px solid #444;
 
             border-radius: 10px;
 
-            background: #fafafa;
+            padding: 20px;
 
-            margin-bottom: 25px;
+            background: #fafafa;
 
         }
 
+        .agreement-warning {
+
+            padding: 12px;
+
+            background: #fff3cd;
+
+            border-radius: 6px;
+
+            margin-top: 15px;
+
+        }
 
         @media (max-width: 600px) {
 
@@ -648,18 +487,15 @@ if ($assignment) {
         Taxi Management System
     </h1>
 
-
     <nav>
 
         <a href="dashboard.php">
             Dashboard
         </a>
 
-
-        <a href="../index2.php">
-            Home
+        <a href="../index2.php#taxis">
+            Taxi Availability
         </a>
-
 
         <a href="logout.php">
             Logout
@@ -683,26 +519,26 @@ if ($assignment) {
 
     <?php if ($message !== ""): ?>
 
-        <div class="success-message">
+        <p class="success-message">
 
             <?php
             echo htmlspecialchars($message);
             ?>
 
-        </div>
+        </p>
 
     <?php endif; ?>
 
 
     <?php if ($error !== ""): ?>
 
-        <div class="error-message">
+        <p class="error-message">
 
             <?php
             echo htmlspecialchars($error);
             ?>
 
-        </div>
+        </p>
 
     <?php endif; ?>
 
@@ -711,12 +547,11 @@ if ($assignment) {
     <!-- WELCOME -->
     <!-- ================================================= -->
 
-    <section class="dashboard-card">
+    <section>
 
         <h2>
 
             Welcome,
-
             <?php
             echo htmlspecialchars(
                 $driver["name"]
@@ -725,41 +560,35 @@ if ($assignment) {
 
         </h2>
 
-
         <p>
             Driver Portal
         </p>
-
 
         <p>
 
             Account Status:
 
-            <?php
+            <span class="status
+                <?php
 
-            if (
-                $driver["status"] === "Verified"
-            ) {
+                if (
+                    $driver["status"] === "Verified"
+                ) {
 
-                $status_class = "verified";
+                    echo "verified";
 
-            } elseif (
-                $driver["status"] === "Inactive"
-            ) {
+                } elseif (
+                    $driver["status"] === "Inactive"
+                ) {
 
-                $status_class = "inactive";
+                    echo "inactive";
 
-            } else {
+                } else {
 
-                $status_class = "pending";
+                    echo "pending";
+                }
 
-            }
-
-            ?>
-
-
-            <span
-                class="status <?php echo $status_class; ?>"
+                ?>"
             >
 
                 <?php
@@ -776,126 +605,51 @@ if ($assignment) {
 
 
     <!-- ================================================= -->
-    <!-- DRIVER INFORMATION -->
+    <!-- DRIVER PASS / ASSIGNED TAXI -->
     <!-- ================================================= -->
 
-    <section class="dashboard-card">
+    <?php if ($assignment): ?>
 
-        <h2>
-            My Information
-        </h2>
-
-
-        <div class="pass-row">
-
-            <strong>
-                Name
-            </strong>
-
-            <span>
-                <?php
-                echo htmlspecialchars(
-                    $driver["name"]
-                );
-                ?>
-            </span>
-
-        </div>
-
-
-        <div class="pass-row">
-
-            <strong>
-                Phone
-            </strong>
-
-            <span>
-                <?php
-                echo htmlspecialchars(
-                    $driver["phone"]
-                );
-                ?>
-            </span>
-
-        </div>
-
-
-        <div class="pass-row">
-
-            <strong>
-                Email
-            </strong>
-
-            <span>
-                <?php
-
-                echo $driver["email"] !== ""
-                    ? htmlspecialchars(
-                        $driver["email"]
-                    )
-                    : "Not provided";
-
-                ?>
-
-            </span>
-
-        </div>
-
-
-        <div class="pass-row">
-
-            <strong>
-                Address
-            </strong>
-
-            <span>
-                <?php
-                echo htmlspecialchars(
-                    $driver["address"]
-                );
-                ?>
-            </span>
-
-        </div>
-
-
-        <div class="pass-row">
-
-            <strong>
-                Driving Licence
-            </strong>
-
-            <span>
-                <?php
-                echo htmlspecialchars(
-                    $driver["driving_license"]
-                );
-                ?>
-            </span>
-
-        </div>
-
-    </section>
-
-
-    <!-- ================================================= -->
-    <!-- TAXI ASSIGNMENT -->
-    <!-- ================================================= -->
-
-    <section>
-
-        <h2>
-            Taxi Assignment
-        </h2>
-
-
-        <?php if ($assignment): ?>
-
+        <section>
 
             <div class="pass-card">
 
                 <div class="pass-title">
-                    🚕 Assigned Taxi
+                    🚕 Driver Assignment Pass
+                </div>
+
+
+                <div class="pass-row">
+
+                    <strong>
+                        Driver
+                    </strong>
+
+                    <span>
+                        <?php
+                        echo htmlspecialchars(
+                            $driver["name"]
+                        );
+                        ?>
+                    </span>
+
+                </div>
+
+
+                <div class="pass-row">
+
+                    <strong>
+                        Phone
+                    </strong>
+
+                    <span>
+                        <?php
+                        echo htmlspecialchars(
+                            $driver["phone"]
+                        );
+                        ?>
+                    </span>
+
                 </div>
 
 
@@ -931,11 +685,13 @@ if ($assignment) {
                     <span>
 
                         <?php
+
                         echo htmlspecialchars(
                             $assignment[
                                 "registration_number"
                             ]
                         );
+
                         ?>
 
                     </span>
@@ -977,11 +733,13 @@ if ($assignment) {
                     <span class="status verified">
 
                         <?php
+
                         echo htmlspecialchars(
                             $assignment[
                                 "assignment_status"
                             ]
                         );
+
                         ?>
 
                     </span>
@@ -998,11 +756,13 @@ if ($assignment) {
                     <span>
 
                         <?php
+
                         echo htmlspecialchars(
                             $assignment[
                                 "assigned_at"
                             ]
                         );
+
                         ?>
 
                     </span>
@@ -1011,35 +771,34 @@ if ($assignment) {
 
             </div>
 
+        </section>
 
-        <?php else: ?>
 
+    <?php else: ?>
 
-            <div class="empty-box">
+        <section>
 
-                <h3>
+            <div class="dashboard-card">
+
+                <h2>
                     No Taxi Assigned
-                </h3>
-
+                </h2>
 
                 <p>
-                    Your driver application has not
-                    been assigned a taxi yet.
+                    You currently do not have a taxi assigned.
                 </p>
 
-
                 <p>
-                    Once the admin verifies your
-                    application and assigns a taxi,
-                    the details will appear here.
+                    Once the admin verifies your registration
+                    and assigns a taxi, the assignment will
+                    appear here.
                 </p>
 
             </div>
 
+        </section>
 
-        <?php endif; ?>
-
-    </section>
+    <?php endif; ?>
 
 
     <!-- ================================================= -->
@@ -1054,8 +813,11 @@ if ($assignment) {
                 Taxi Agreement
             </h2>
 
-
             <div class="agreement-box">
+
+                <h3>
+                    Agreement Details
+                </h3>
 
 
                 <div class="pass-row">
@@ -1065,14 +827,10 @@ if ($assignment) {
                     </strong>
 
                     <span>
-
-                        #
-
-                        <?php
+                        #<?php
                         echo (int)
                             $agreement["id"];
                         ?>
-
                     </span>
 
                 </div>
@@ -1085,13 +843,11 @@ if ($assignment) {
                     </strong>
 
                     <span>
-
                         <?php
                         echo htmlspecialchars(
                             $agreement["start_date"]
                         );
                         ?>
-
                     </span>
 
                 </div>
@@ -1104,13 +860,11 @@ if ($assignment) {
                     </strong>
 
                     <span>
-
                         <?php
                         echo htmlspecialchars(
                             $agreement["end_date"]
                         );
                         ?>
-
                     </span>
 
                 </div>
@@ -1142,14 +896,13 @@ if ($assignment) {
                 <div class="pass-row">
 
                     <strong>
-                        Status
+                        Agreement Status
                     </strong>
 
                     <span>
 
                         <?php if (
-                            (int)
-                            $agreement["accepted"] === 1
+                            $agreement["accepted"] == 1
                         ): ?>
 
                             <span class="accepted">
@@ -1169,30 +922,26 @@ if ($assignment) {
                 </div>
 
 
-                <!-- ===================================== -->
-                <!-- ACCEPT AGREEMENT -->
-                <!-- ===================================== -->
-
                 <?php if (
-                    (int)
-                    $agreement["accepted"] === 0
+                    $agreement["accepted"] == 0
                 ): ?>
-
 
                     <div class="agreement-warning">
 
                         <strong>
-                            Agreement requires your acceptance.
+                            Action Required
                         </strong>
 
-
                         <p>
-                            Review the agreement details
-                            above before accepting it.
+                            Please review the agreement
+                            details above and accept the
+                            agreement to continue.
                         </p>
 
 
                         <form method="POST">
+
+                            <?php csrf_field(); ?>
 
                             <input
                                 type="hidden"
@@ -1202,7 +951,6 @@ if ($assignment) {
                                         $agreement["id"];
                                 ?>"
                             >
-
 
                             <button
                                 type="submit"
@@ -1216,13 +964,10 @@ if ($assignment) {
 
                     </div>
 
-
                 <?php else: ?>
 
-
                     <p class="accepted">
-
-                        ✓ Agreement Accepted
+                        ✓ Agreement accepted
 
                         <?php if (
                             !empty(
@@ -1244,9 +989,7 @@ if ($assignment) {
 
                     </p>
 
-
                 <?php endif; ?>
-
 
             </div>
 
@@ -1256,28 +999,88 @@ if ($assignment) {
 
 
     <!-- ================================================= -->
-    <!-- BASIC SERVICES -->
+    <!-- DRIVER SERVICES -->
     <!-- ================================================= -->
 
-    <section class="dashboard-card">
+    <section>
 
         <h2>
             Driver Services
         </h2>
 
 
-        <p>
-            Available taxis can be viewed from the
-            public taxi listing.
-        </p>
+        <div class="dashboard-grid">
 
 
-        <a
-            href="../index2.php#taxis"
-            class="button"
-        >
-            View Available Taxis
-        </a>
+            <!-- RENT -->
+
+            <div class="dashboard-card">
+
+                <h3>
+                    Rent Payment
+                </h3>
+
+                <p>
+                    View your taxi rent and payment
+                    records.
+                </p>
+
+                <a
+                    class="dashboard-button"
+                    href="payments.php"
+                >
+                    Rent Payments
+                </a>
+
+            </div>
+
+
+            <!-- TAXI AVAILABILITY -->
+
+            <div class="dashboard-card">
+
+                <h3>
+                    Taxi Availability
+                </h3>
+
+                <p>
+                    Check currently available taxis.
+                </p>
+
+                <a
+                    class="dashboard-button"
+                    href="../index2.php#taxis"
+                >
+                    View Available Taxis
+                </a>
+
+            </div>
+
+
+            <!-- PROFILE -->
+
+            <div class="dashboard-card">
+
+                <h3>
+                    My Profile
+                </h3>
+
+                <p>
+                    View your registered driver
+                    information.
+                </p>
+
+                <a
+                    class="dashboard-button"
+                    href="profile.php"
+                >
+                    View Profile
+                </a>
+
+            </div>
+
+
+        </div>
 
     </section>
 

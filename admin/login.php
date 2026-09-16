@@ -1,8 +1,5 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 
 require_once "../config.php";
@@ -16,13 +13,15 @@ $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
+    csrf_verify();
+
     $username = trim($_POST["username"] ?? "");
-    $password = $_POST["password"] ?? "";
+    $password = trim($_POST["password"] ?? "");
 
 
-    // =================================================
+    // -------------------------------------------------
     // VALIDATION
-    // =================================================
+    // -------------------------------------------------
 
     if ($username === "" || $password === "") {
 
@@ -30,16 +29,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     } else {
 
-        // =============================================
+
+        // -------------------------------------------------
         // FIND ADMIN
-        // =============================================
+        // -------------------------------------------------
 
         $sql = "
-            SELECT
-                id,
-                name,
-                username,
-                password
+            SELECT *
             FROM admins
             WHERE username = ?
             LIMIT 1
@@ -64,106 +60,75 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             mysqli_stmt_execute($stmt);
 
-            $result = mysqli_stmt_get_result($stmt);
+            $result =
+                mysqli_stmt_get_result($stmt);
 
 
-            // =========================================
+            // -------------------------------------------------
             // CHECK ADMIN
-            // =========================================
+            // -------------------------------------------------
 
-            if (mysqli_num_rows($result) === 1) {
+            if (
+                mysqli_num_rows($result) === 1
+            ) {
 
-                $admin = mysqli_fetch_assoc($result);
-
-                $stored_password = $admin["password"];
-
-                /*
-                 * First try secure password_hash() password.
-                 */
-                $password_valid = password_verify(
-                    $password,
-                    $stored_password
-                );
+                $admin =
+                    mysqli_fetch_assoc($result);
 
 
-                /*
-                 * Backward compatibility:
-                 *
-                 * If the current database still contains
-                 * a plain-text password, allow it once.
-                 *
-                 * After successful login, immediately
-                 * convert it to password_hash().
-                 */
                 if (
-                    !$password_valid &&
-                    hash_equals(
-                        $stored_password,
-                        $password
+                    verify_password(
+                        $password,
+                        $admin["password"]
                     )
                 ) {
 
-                    $password_valid = true;
+                    // Legacy plain-text passwords are
+                    // upgraded to a proper hash the
+                    // moment they're used successfully.
+                    if (
+                        is_legacy_plain_password(
+                            $admin["password"]
+                        )
+                    ) {
 
-                    $new_hash = password_hash(
-                        $password,
-                        PASSWORD_DEFAULT
-                    );
+                        $new_hash =
+                            hash_password($password);
 
-
-                    $update_sql = "
-                        UPDATE admins
-                        SET password = ?
-                        WHERE id = ?
-                    ";
-
-                    $update_stmt = mysqli_prepare(
-                        $conn,
-                        $update_sql
-                    );
-
-
-                    if ($update_stmt) {
-
-                        mysqli_stmt_bind_param(
-                            $update_stmt,
-                            "si",
-                            $new_hash,
-                            $admin["id"]
+                        $upgrade_stmt = mysqli_prepare(
+                            $conn,
+                            "UPDATE admins SET password = ? WHERE id = ?"
                         );
 
-                        mysqli_stmt_execute(
-                            $update_stmt
-                        );
-
-                        mysqli_stmt_close(
-                            $update_stmt
-                        );
+                        if ($upgrade_stmt) {
+                            mysqli_stmt_bind_param(
+                                $upgrade_stmt,
+                                "si",
+                                $new_hash,
+                                $admin["id"]
+                            );
+                            mysqli_stmt_execute($upgrade_stmt);
+                            mysqli_stmt_close($upgrade_stmt);
+                        }
                     }
-                }
 
 
-                // =====================================
-                // LOGIN SUCCESS
-                // =====================================
+                    // -------------------------------------------------
+                    // CREATE ADMIN SESSION
+                    // -------------------------------------------------
 
-                if ($password_valid) {
-
-                    /*
-                     * Prevent session fixation.
-                     */
                     session_regenerate_id(true);
 
-
                     $_SESSION["admin_id"] =
-                        (int) $admin["id"];
+                        $admin["id"];
 
                     $_SESSION["admin_name"] =
                         $admin["name"];
 
-                    $_SESSION["admin_username"] =
-                        $admin["username"];
 
+                    // -------------------------------------------------
+                    // GO TO ADMIN DASHBOARD
+                    // -------------------------------------------------
 
                     header(
                         "Location: dashboard.php"
@@ -171,29 +136,29 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                     exit;
 
+
                 } else {
 
                     $error =
-                        "Invalid username or password.";
+                        "Invalid password.";
 
                 }
 
 
             } else {
 
-                /*
-                 * Do not reveal whether the username
-                 * actually exists.
-                 */
                 $error =
-                    "Invalid username or password.";
+                    "Admin account not found.";
 
             }
 
 
             mysqli_stmt_close($stmt);
+
         }
+
     }
+
 }
 
 ?>
@@ -216,12 +181,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         Admin Login - Taxi Management System
     </title>
 
-
     <link
         rel="stylesheet"
         href="../css/style.css"
     >
-
 
     <style>
 
@@ -233,40 +196,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         }
 
-
         .error-message {
 
             color: #b91c1c;
 
-            background: #fee2e2;
-
-            border: 1px solid #fecaca;
-
-            padding: 12px;
-
-            border-radius: 6px;
-
-            margin-bottom: 20px;
+            margin-bottom: 15px;
 
         }
-
 
         .login-links {
 
             margin-top: 20px;
 
-            display: flex;
-
-            gap: 15px;
-
-            flex-wrap: wrap;
-
         }
-
 
         .login-links a {
 
-            text-decoration: none;
+            margin-right: 15px;
 
         }
 
@@ -292,7 +238,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
 <!-- ================================================= -->
-<!-- MAIN -->
+<!-- LOGIN -->
 <!-- ================================================= -->
 
 <main>
@@ -310,32 +256,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         </p>
 
 
-        <!-- ========================================= -->
-        <!-- ERROR -->
-        <!-- ========================================= -->
-
         <?php if ($error !== ""): ?>
 
-            <div class="error-message">
+            <p class="error-message">
 
                 <?php
                 echo htmlspecialchars($error);
                 ?>
 
-            </div>
+            </p>
 
         <?php endif; ?>
 
-
-        <!-- ========================================= -->
-        <!-- LOGIN FORM -->
-        <!-- ========================================= -->
 
         <form
             method="POST"
             action=""
         >
 
+            <?php csrf_field(); ?>
 
             <!-- USERNAME -->
 
@@ -345,17 +284,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     Username
                 </label>
 
-
                 <input
                     type="text"
                     id="username"
                     name="username"
                     autocomplete="username"
-                    value="<?php
-                        echo htmlspecialchars(
-                            $_POST["username"] ?? ""
-                        );
-                    ?>"
                     required
                 >
 
@@ -372,7 +305,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <label for="password">
                     Password
                 </label>
-
 
                 <input
                     type="password"
@@ -398,9 +330,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         </form>
 
 
-        <!-- ========================================= -->
+        <!-- ================================================= -->
         <!-- OTHER PORTALS -->
-        <!-- ========================================= -->
+        <!-- ================================================= -->
 
         <div class="login-links">
 
@@ -408,7 +340,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 Back to Public Portal
             </a>
 
-
+            <a href="../driver/login.php">
+                Driver Login
+            </a>
 
         </div>
 

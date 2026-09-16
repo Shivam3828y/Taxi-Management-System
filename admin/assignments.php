@@ -13,18 +13,16 @@ $message = "";
 $error = "";
 
 
-// =====================================================
+// ==============================
 // ASSIGN TAXI
-// =====================================================
+// ==============================
 
-if (
-    $_SERVER["REQUEST_METHOD"] === "POST"
-    && isset($_POST["assign_taxi"])
-) {
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
+    csrf_verify();
 
     $driver_id = (int) ($_POST["driver_id"] ?? 0);
     $taxi_id = (int) ($_POST["taxi_id"] ?? 0);
-
 
     if ($driver_id <= 0 || $taxi_id <= 0) {
 
@@ -32,354 +30,240 @@ if (
 
     } else {
 
-        /*
-         * Start transaction.
-         *
-         * Assignment creation and taxi status update
-         * must succeed together.
-         */
+        // ==============================
+        // CHECK DRIVER
+        // ==============================
 
-        mysqli_begin_transaction($conn);
+        $driver_sql = "
+            SELECT id
+            FROM drivers
+            WHERE id = ?
+            AND status = 'Verified'
+        ";
 
+        $driver_stmt =
+            mysqli_prepare($conn, $driver_sql);
 
-        try {
+        mysqli_stmt_bind_param(
+            $driver_stmt,
+            "i",
+            $driver_id
+        );
 
-            // =================================================
-            // CHECK DRIVER
-            // =================================================
+        mysqli_stmt_execute($driver_stmt);
 
-            $driver_sql = "
-                SELECT id, name
-                FROM drivers
-                WHERE id = ?
-                AND status = 'Verified'
-                LIMIT 1
-            ";
-
-            $driver_stmt = mysqli_prepare(
-                $conn,
-                $driver_sql
-            );
-
-            if (!$driver_stmt) {
-                throw new Exception(
-                    "Database error while checking driver."
-                );
-            }
-
-            mysqli_stmt_bind_param(
-                $driver_stmt,
-                "i",
-                $driver_id
-            );
-
-            mysqli_stmt_execute($driver_stmt);
-
-            $driver_result =
-                mysqli_stmt_get_result($driver_stmt);
-
-            $driver = mysqli_fetch_assoc(
-                $driver_result
-            );
-
-            mysqli_stmt_close($driver_stmt);
+        $driver_result =
+            mysqli_stmt_get_result($driver_stmt);
 
 
-            if (!$driver) {
+        // ==============================
+        // CHECK TAXI
+        // Rent is also fetched here
+        // ==============================
 
-                throw new Exception(
-                    "Driver must be verified before assigning a taxi."
-                );
-            }
+        $taxi_sql = "
+            SELECT id, rent
+            FROM taxis
+            WHERE id = ?
+            AND status = 'Available'
+        ";
+
+        $taxi_stmt =
+            mysqli_prepare($conn, $taxi_sql);
+
+        mysqli_stmt_bind_param(
+            $taxi_stmt,
+            "i",
+            $taxi_id
+        );
+
+        mysqli_stmt_execute($taxi_stmt);
+
+        $taxi_result =
+            mysqli_stmt_get_result($taxi_stmt);
 
 
-            // =================================================
+        if (mysqli_num_rows($driver_result) !== 1) {
+
+            $error =
+                "Driver must be verified.";
+
+        } elseif (mysqli_num_rows($taxi_result) !== 1) {
+
+            $error =
+                "Taxi is not available.";
+
+        } else {
+
+            // ==============================
+            // GET TAXI RENT
+            // ==============================
+
+            $taxi_data =
+                mysqli_fetch_assoc($taxi_result);
+
+            $taxi_rent =
+                (float) $taxi_data["rent"];
+
+
+            // ==============================
             // CHECK EXISTING ACTIVE ASSIGNMENT
-            // =================================================
+            // ==============================
 
-            $check_driver_sql = "
+            $check_sql = "
                 SELECT id
                 FROM assignments
                 WHERE driver_id = ?
                 AND status = 'Active'
-                LIMIT 1
             ";
 
-            $check_driver_stmt = mysqli_prepare(
-                $conn,
-                $check_driver_sql
-            );
-
-            if (!$check_driver_stmt) {
-                throw new Exception(
-                    "Database error while checking driver assignment."
+            $check_stmt =
+                mysqli_prepare(
+                    $conn,
+                    $check_sql
                 );
-            }
 
             mysqli_stmt_bind_param(
-                $check_driver_stmt,
+                $check_stmt,
                 "i",
                 $driver_id
             );
 
-            mysqli_stmt_execute(
-                $check_driver_stmt
-            );
+            mysqli_stmt_execute($check_stmt);
 
-            $check_driver_result =
-                mysqli_stmt_get_result(
-                    $check_driver_stmt
+            $check_result =
+                mysqli_stmt_get_result($check_stmt);
+
+
+            if (mysqli_num_rows($check_result) > 0) {
+
+                $error =
+                    "This driver already has an active taxi.";
+
+            } else {
+
+                // ==============================
+                // INSERT ASSIGNMENT
+                // ==============================
+
+                $insert_sql = "
+                    INSERT INTO assignments
+                    (
+                        driver_id,
+                        taxi_id
+                    )
+                    VALUES (?, ?)
+                ";
+
+                $insert_stmt =
+                    mysqli_prepare(
+                        $conn,
+                        $insert_sql
+                    );
+
+                mysqli_stmt_bind_param(
+                    $insert_stmt,
+                    "ii",
+                    $driver_id,
+                    $taxi_id
                 );
 
-            $existing_assignment =
-                mysqli_fetch_assoc(
-                    $check_driver_result
-                );
 
-            mysqli_stmt_close(
-                $check_driver_stmt
-            );
+                if (
+                    mysqli_stmt_execute(
+                        $insert_stmt
+                    )
+                ) {
 
+                    // ==============================
+                    // UPDATE TAXI STATUS
+                    // ==============================
 
-            if ($existing_assignment) {
+                    $update_sql = "
+                        UPDATE taxis
+                        SET status = 'Assigned'
+                        WHERE id = ?
+                    ";
 
-                throw new Exception(
-                    "This driver already has an active taxi."
-                );
-            }
+                    $update_stmt =
+                        mysqli_prepare(
+                            $conn,
+                            $update_sql
+                        );
 
+                    mysqli_stmt_bind_param(
+                        $update_stmt,
+                        "i",
+                        $taxi_id
+                    );
 
-            // =================================================
-            // CHECK TAXI
-            // =================================================
+                    mysqli_stmt_execute(
+                        $update_stmt
+                    );
 
-            $taxi_sql = "
-                SELECT
-                    id,
-                    brand,
-                    model,
-                    registration_number,
-                    rent
-                FROM taxis
-                WHERE id = ?
-                AND status = 'Available'
-                LIMIT 1
-            ";
-
-            $taxi_stmt = mysqli_prepare(
-                $conn,
-                $taxi_sql
-            );
-
-            if (!$taxi_stmt) {
-                throw new Exception(
-                    "Database error while checking taxi."
-                );
-            }
-
-            mysqli_stmt_bind_param(
-                $taxi_stmt,
-                "i",
-                $taxi_id
-            );
-
-            mysqli_stmt_execute(
-                $taxi_stmt
-            );
-
-            $taxi_result =
-                mysqli_stmt_get_result(
-                    $taxi_stmt
-                );
-
-            $taxi = mysqli_fetch_assoc(
-                $taxi_result
-            );
-
-            mysqli_stmt_close(
-                $taxi_stmt
-            );
+                    mysqli_stmt_close(
+                        $update_stmt
+                    );
 
 
-            if (!$taxi) {
+                    $message =
+                        "Taxi assigned successfully. Rent: ₹"
+                        . number_format(
+                            $taxi_rent,
+                            2
+                        )
+                        . " / day";
 
-                throw new Exception(
-                    "Taxi is no longer available."
-                );
-            }
+                } else {
 
+                    $error =
+                        "Failed to create assignment.";
 
-            // =================================================
-            // CREATE ASSIGNMENT
-            // =================================================
-
-            $insert_sql = "
-                INSERT INTO assignments
-                (
-                    driver_id,
-                    taxi_id,
-                    status
-                )
-                VALUES
-                (
-                    ?,
-                    ?,
-                    'Active'
-                )
-            ";
-
-            $insert_stmt = mysqli_prepare(
-                $conn,
-                $insert_sql
-            );
-
-            if (!$insert_stmt) {
-                throw new Exception(
-                    "Database error while creating assignment."
-                );
-            }
-
-            mysqli_stmt_bind_param(
-                $insert_stmt,
-                "ii",
-                $driver_id,
-                $taxi_id
-            );
-
-            if (
-                !mysqli_stmt_execute(
-                    $insert_stmt
-                )
-            ) {
+                }
 
                 mysqli_stmt_close(
                     $insert_stmt
                 );
-
-                throw new Exception(
-                    "Failed to create taxi assignment."
-                );
             }
 
             mysqli_stmt_close(
-                $insert_stmt
+                $check_stmt
             );
-
-
-            // =================================================
-            // UPDATE TAXI STATUS
-            // =================================================
-
-            $update_sql = "
-                UPDATE taxis
-                SET status = 'Assigned'
-                WHERE id = ?
-                AND status = 'Available'
-            ";
-
-            $update_stmt = mysqli_prepare(
-                $conn,
-                $update_sql
-            );
-
-            if (!$update_stmt) {
-                throw new Exception(
-                    "Database error while updating taxi status."
-                );
-            }
-
-            mysqli_stmt_bind_param(
-                $update_stmt,
-                "i",
-                $taxi_id
-            );
-
-            mysqli_stmt_execute(
-                $update_stmt
-            );
-
-
-            if (
-                mysqli_stmt_affected_rows(
-                    $update_stmt
-                ) !== 1
-            ) {
-
-                mysqli_stmt_close(
-                    $update_stmt
-                );
-
-                throw new Exception(
-                    "Taxi status could not be updated."
-                );
-            }
-
-            mysqli_stmt_close(
-                $update_stmt
-            );
-
-
-            // =================================================
-            // COMMIT
-            // =================================================
-
-            mysqli_commit($conn);
-
-
-            $message =
-                "Taxi assigned successfully to "
-                . $driver["name"]
-                . ". Rent: ₹"
-                . number_format(
-                    (float) $taxi["rent"],
-                    2
-                )
-                . " / day";
-
-
-        } catch (Exception $e) {
-
-            // =================================================
-            // ROLLBACK
-            // =================================================
-
-            mysqli_rollback($conn);
-
-            $error = $e->getMessage();
         }
+
+        mysqli_stmt_close(
+            $driver_stmt
+        );
+
+        mysqli_stmt_close(
+            $taxi_stmt
+        );
     }
 }
 
 
-// =====================================================
-// VERIFIED DRIVERS WITHOUT ACTIVE ASSIGNMENT
-// =====================================================
+// ==============================
+// VERIFIED DRIVERS
+// ==============================
 
 $drivers_sql = "
-    SELECT
-        d.id,
-        d.name
-    FROM drivers d
-
-    LEFT JOIN assignments a
-        ON d.id = a.driver_id
-        AND a.status = 'Active'
-
-    WHERE d.status = 'Verified'
-    AND a.id IS NULL
-
-    ORDER BY d.name
+    SELECT id, name
+    FROM drivers
+    WHERE status = 'Verified'
+    ORDER BY name
 ";
 
-$drivers_result = mysqli_query(
-    $conn,
-    $drivers_sql
-);
+$drivers_result =
+    mysqli_query(
+        $conn,
+        $drivers_sql
+    );
 
 
-// =====================================================
+// ==============================
 // AVAILABLE TAXIS
-// =====================================================
+// Rent included
+// ==============================
 
 $taxis_sql = "
     SELECT
@@ -393,27 +277,28 @@ $taxis_sql = "
     ORDER BY id DESC
 ";
 
-$taxis_result = mysqli_query(
-    $conn,
-    $taxis_sql
-);
+$taxis_result =
+    mysqli_query(
+        $conn,
+        $taxis_sql
+    );
 
 
-// =====================================================
+// ==============================
 // ACTIVE ASSIGNMENTS
-// =====================================================
+// Rent included
+// ==============================
 
 $assignments_sql = "
     SELECT
         assignments.id,
-        assignments.driver_id,
-        assignments.taxi_id,
 
         drivers.name AS driver_name,
 
         taxis.brand,
         taxis.model,
         taxis.registration_number,
+
         taxis.rent,
 
         assignments.assigned_at,
@@ -432,10 +317,11 @@ $assignments_sql = "
     ORDER BY assignments.id DESC
 ";
 
-$assignments_result = mysqli_query(
-    $conn,
-    $assignments_sql
-);
+$assignments_result =
+    mysqli_query(
+        $conn,
+        $assignments_sql
+    );
 
 ?>
 
@@ -453,7 +339,7 @@ $assignments_result = mysqli_query(
     >
 
     <title>
-        Taxi Assignment - Taxi Management System
+        Taxi Assignment
     </title>
 
     <link
@@ -461,122 +347,11 @@ $assignments_result = mysqli_query(
         href="../css/style.css"
     >
 
-    <style>
-
-        .message {
-            padding: 12px;
-            margin-bottom: 20px;
-            border-radius: 6px;
-        }
-
-        .success-message {
-            background: #f0fdf4;
-            color: #166534;
-            border: 1px solid #86efac;
-        }
-
-        .error-message {
-            background: #fef2f2;
-            color: #991b1b;
-            border: 1px solid #fca5a5;
-        }
-
-        .rent-display {
-
-            display: none;
-
-            margin-top: 10px;
-            padding: 10px;
-
-            background: #f8fafc;
-
-            border: 1px solid #ddd;
-
-            border-radius: 6px;
-        }
-
-        .assignment-form {
-
-            max-width: 600px;
-
-        }
-
-        .form-group {
-
-            margin-bottom: 15px;
-
-        }
-
-        .form-group label {
-
-            display: block;
-
-            margin-bottom: 6px;
-
-            font-weight: bold;
-
-        }
-
-        .form-group select {
-
-            width: 100%;
-
-            box-sizing: border-box;
-
-            padding: 10px;
-
-        }
-
-        .table-container {
-
-            overflow-x: auto;
-
-        }
-
-        table {
-
-            width: 100%;
-
-            border-collapse: collapse;
-
-        }
-
-        th,
-        td {
-
-            padding: 10px;
-
-            border: 1px solid #ddd;
-
-            text-align: left;
-
-        }
-
-        th {
-
-            background: #f5f5f5;
-
-        }
-
-        .status-active {
-
-            color: #15803d;
-
-            font-weight: bold;
-
-        }
-
-    </style>
-
 </head>
 
 
 <body>
 
-
-<!-- ================================================= -->
-<!-- HEADER -->
-<!-- ================================================= -->
 
 <header>
 
@@ -599,16 +374,12 @@ $assignments_result = mysqli_query(
             Taxis
         </a>
 
-        <a href="assignments.php">
-            Assignments
-        </a>
-
         <a href="agreements.php">
             Agreements
         </a>
 
-        <a href="../index2.php">
-            Public Portal
+        <a href="payments.php">
+            Payments
         </a>
 
         <a href="logout.php">
@@ -620,16 +391,12 @@ $assignments_result = mysqli_query(
 </header>
 
 
-<!-- ================================================= -->
-<!-- MAIN -->
-<!-- ================================================= -->
-
 <main>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- ASSIGN TAXI -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <section>
 
@@ -640,45 +407,38 @@ $assignments_result = mysqli_query(
 
     <?php if ($message !== ""): ?>
 
-        <div class="message success-message">
+        <p style="color: green;">
 
             <?php
             echo htmlspecialchars($message);
             ?>
 
-        </div>
+        </p>
 
     <?php endif; ?>
 
 
     <?php if ($error !== ""): ?>
 
-        <div class="message error-message">
+        <p style="color: red;">
 
             <?php
             echo htmlspecialchars($error);
             ?>
 
-        </div>
+        </p>
 
     <?php endif; ?>
 
 
-    <form
-        method="POST"
-        class="assignment-form"
-    >
+    <form method="POST">
 
-        <input
-            type="hidden"
-            name="assign_taxi"
-            value="1"
-        >
+    <?php csrf_field(); ?>
 
 
         <!-- DRIVER -->
 
-        <div class="form-group">
+        <div>
 
             <label for="driver_id">
                 Driver
@@ -696,50 +456,42 @@ $assignments_result = mysqli_query(
                 </option>
 
 
-                <?php if (
-                    $drivers_result &&
-                    mysqli_num_rows($drivers_result) > 0
+                <?php while (
+                    $driver =
+                    mysqli_fetch_assoc(
+                        $drivers_result
+                    )
                 ): ?>
 
-                    <?php while (
-                        $driver =
-                        mysqli_fetch_assoc(
-                            $drivers_result
-                        )
-                    ): ?>
+                    <option
+                        value="<?php
+                            echo $driver["id"];
+                        ?>"
+                    >
 
-                        <option
-                            value="<?php
-                                echo (int)$driver["id"];
-                            ?>"
-                        >
+                        <?php
 
-                            <?php
-                            echo htmlspecialchars(
-                                $driver["name"]
-                            );
-                            ?>
+                        echo htmlspecialchars(
+                            $driver["name"]
+                        );
 
-                        </option>
+                        ?>
 
-                    <?php endwhile; ?>
-
-                <?php else: ?>
-
-                    <option value="" disabled>
-                        No verified drivers available
                     </option>
 
-                <?php endif; ?>
+                <?php endwhile; ?>
 
             </select>
 
         </div>
 
 
+        <br>
+
+
         <!-- TAXI -->
 
-        <div class="form-group">
+        <div>
 
             <label for="taxi_id">
                 Taxi
@@ -758,90 +510,88 @@ $assignments_result = mysqli_query(
                 </option>
 
 
-                <?php if (
-                    $taxis_result &&
-                    mysqli_num_rows($taxis_result) > 0
+                <?php while (
+                    $taxi =
+                    mysqli_fetch_assoc(
+                        $taxis_result
+                    )
                 ): ?>
 
-                    <?php while (
-                        $taxi =
-                        mysqli_fetch_assoc(
-                            $taxis_result
-                        )
-                    ): ?>
+                    <option
+                        value="<?php
+                            echo $taxi["id"];
+                        ?>"
+                        data-rent="<?php
+                            echo $taxi["rent"];
+                        ?>"
+                    >
 
-                        <option
-                            value="<?php
-                                echo (int)$taxi["id"];
-                            ?>"
-                            data-rent="<?php
-                                echo htmlspecialchars(
-                                    $taxi["rent"]
-                                );
-                            ?>"
-                        >
+                        <?php
 
-                            <?php
+                        echo htmlspecialchars(
+                            $taxi["brand"]
+                            . " "
+                            . $taxi["model"]
+                            . " - "
+                            . $taxi[
+                                "registration_number"
+                            ]
+                        );
 
-                            echo htmlspecialchars(
-                                $taxi["brand"]
-                                . " "
-                                . $taxi["model"]
-                                . " - "
-                                . $taxi[
-                                    "registration_number"
-                                ]
-                            );
+                        ?>
 
-                            ?>
-
-                        </option>
-
-                    <?php endwhile; ?>
-
-                <?php else: ?>
-
-                    <option value="" disabled>
-                        No available taxis
                     </option>
 
-                <?php endif; ?>
+                <?php endwhile; ?>
 
             </select>
 
+        </div>
 
-            <div
-                id="rent-display"
-                class="rent-display"
-            >
 
-                <strong>
-                    Fixed Taxi Rent:
-                </strong>
+        <br>
 
-                <span id="rent-value">
-                    ₹0.00
-                </span>
 
+        <!-- TAXI RENT -->
+
+        <div
+            id="rent-display"
+            style="display: none;"
+        >
+
+            <strong>
+                Fixed Taxi Rent:
+            </strong>
+
+
+            <span id="rent-value">
+                ₹0
+            </span>
+
+
+            <span>
                 / day
-
-            </div>
+            </span>
 
         </div>
+
+
+        <br>
 
 
         <button type="submit">
             Assign Taxi
         </button>
 
+
     </form>
 
 </section>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- ACTIVE ASSIGNMENTS -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <section>
 
@@ -851,166 +601,177 @@ $assignments_result = mysqli_query(
 
 
     <?php if (
-        $assignments_result &&
-        mysqli_num_rows($assignments_result) > 0
+        mysqli_num_rows(
+            $assignments_result
+        ) > 0
     ): ?>
 
-        <div class="table-container">
 
-            <table>
+        <table
+            border="1"
+            cellpadding="10"
+        >
 
-                <thead>
+            <thead>
+
+                <tr>
+
+                    <th>
+                        ID
+                    </th>
+
+                    <th>
+                        Driver
+                    </th>
+
+                    <th>
+                        Taxi
+                    </th>
+
+                    <th>
+                        Registration
+                    </th>
+
+                    <th>
+                        Rent
+                    </th>
+
+                    <th>
+                        Assigned At
+                    </th>
+
+                    <th>
+                        Status
+                    </th>
+
+                </tr>
+
+            </thead>
+
+
+            <tbody>
+
+
+                <?php while (
+                    $assignment =
+                    mysqli_fetch_assoc(
+                        $assignments_result
+                    )
+                ): ?>
 
                     <tr>
 
-                        <th>
-                            ID
-                        </th>
 
-                        <th>
-                            Driver
-                        </th>
+                        <td>
 
-                        <th>
-                            Taxi
-                        </th>
+                            <?php
+                            echo $assignment["id"];
+                            ?>
 
-                        <th>
-                            Registration
-                        </th>
+                        </td>
 
-                        <th>
-                            Rent
-                        </th>
 
-                        <th>
-                            Assigned At
-                        </th>
+                        <td>
 
-                        <th>
-                            Status
-                        </th>
+                            <?php
+
+                            echo htmlspecialchars(
+                                $assignment[
+                                    "driver_name"
+                                ]
+                            );
+
+                            ?>
+
+                        </td>
+
+
+                        <td>
+
+                            <?php
+
+                            echo htmlspecialchars(
+                                $assignment["brand"]
+                                . " "
+                                . $assignment["model"]
+                            );
+
+                            ?>
+
+                        </td>
+
+
+                        <td>
+
+                            <?php
+
+                            echo htmlspecialchars(
+                                $assignment[
+                                    "registration_number"
+                                ]
+                            );
+
+                            ?>
+
+                        </td>
+
+
+                        <td>
+
+                            ₹<?php
+
+                            echo number_format(
+                                (float)
+                                $assignment["rent"],
+                                2
+                            );
+
+                            ?>
+
+                            / day
+
+                        </td>
+
+
+                        <td>
+
+                            <?php
+
+                            echo htmlspecialchars(
+                                $assignment[
+                                    "assigned_at"
+                                ]
+                            );
+
+                            ?>
+
+                        </td>
+
+
+                        <td>
+
+                            <?php
+
+                            echo htmlspecialchars(
+                                $assignment[
+                                    "status"
+                                ]
+                            );
+
+                            ?>
+
+                        </td>
+
 
                     </tr>
 
-                </thead>
+                <?php endwhile; ?>
 
 
-                <tbody>
+            </tbody>
 
-                    <?php while (
-                        $assignment =
-                        mysqli_fetch_assoc(
-                            $assignments_result
-                        )
-                    ): ?>
+        </table>
 
-                        <tr>
-
-                            <td>
-                                <?php
-                                echo (int)
-                                    $assignment["id"];
-                                ?>
-                            </td>
-
-
-                            <td>
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $assignment[
-                                        "driver_name"
-                                    ]
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-
-                                echo htmlspecialchars(
-                                    $assignment["brand"]
-                                    . " "
-                                    . $assignment["model"]
-                                );
-
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-
-                                echo htmlspecialchars(
-                                    $assignment[
-                                        "registration_number"
-                                    ]
-                                );
-
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                ₹<?php
-
-                                echo number_format(
-                                    (float)
-                                    $assignment["rent"],
-                                    2
-                                );
-
-                                ?>
-
-                                / day
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-
-                                echo htmlspecialchars(
-                                    $assignment[
-                                        "assigned_at"
-                                    ]
-                                );
-
-                                ?>
-
-                            </td>
-
-
-                            <td class="status-active">
-
-                                <?php
-
-                                echo htmlspecialchars(
-                                    $assignment["status"]
-                                );
-
-                                ?>
-
-                            </td>
-
-                        </tr>
-
-                    <?php endwhile; ?>
-
-                </tbody>
-
-            </table>
-
-        </div>
 
     <?php else: ?>
 
@@ -1020,15 +781,12 @@ $assignments_result = mysqli_query(
 
     <?php endif; ?>
 
+
 </section>
 
 
 </main>
 
-
-<!-- ================================================= -->
-<!-- FOOTER -->
-<!-- ================================================= -->
 
 <footer>
 
@@ -1065,9 +823,9 @@ function showTaxiRent(select) {
 
 
     if (
-        rent !== null &&
-        rent !== "" &&
-        Number(rent) >= 0
+        rent !== null
+        && rent !== ""
+        && Number(rent) >= 0
     ) {
 
         rentValue.textContent =
