@@ -70,3 +70,103 @@ footer{
     background-color: #1f2937;
     color:white;
 }
+
+/* =====================================================
+   PAYMENTS PAGE (admin)
+   ===================================================== */
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.summary-card {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 18px;
+    background: white;
+}
+
+.summary-card .value {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+th, td {
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.badge {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.badge-Paid { background: #dcfce7; color: #166534; }
+.badge-Pending { background: #fef9c3; color: #854d0e; }
+.badge-Failed { background: #fee2e2; color: #991b1b; }
+
+.message {
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #86efac;
+    background: #f0fdf4;
+    color: #166534;
+    border-radius: 6px;
+}
+
+.error {
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #fca5a5;
+    background: #fef2f2;
+    color: #991b1b;
+    border-radius: 6px;
+}
+
+.form-card {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+    background: #fafafa;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.form-row > div {
+    flex: 1;
+    min-width: 180px;
+}
+
+.form-card label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.form-card input,
+.form-card select,
+.form-card textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+}

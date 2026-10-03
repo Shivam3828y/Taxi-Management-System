@@ -1,8 +1,5 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 
 if (!isset($_SESSION["driver_id"])) {
@@ -45,22 +42,23 @@ mysqli_stmt_bind_param(
     $driver_id
 );
 
-mysqli_stmt_execute($driver_stmt);
-
-$driver_result = mysqli_stmt_get_result(
+mysqli_stmt_execute(
     $driver_stmt
 );
+
+$driver_result =
+    mysqli_stmt_get_result(
+        $driver_stmt
+    );
 
 $driver = mysqli_fetch_assoc(
     $driver_result
 );
 
-mysqli_stmt_close($driver_stmt);
+mysqli_stmt_close(
+    $driver_stmt
+);
 
-
-// =====================================================
-// DRIVER NOT FOUND
-// =====================================================
 
 if (!$driver) {
 
@@ -147,11 +145,8 @@ $summary_sql = "
     SELECT
         COALESCE(SUM(amount), 0) AS total_paid,
         COUNT(*) AS payment_count
-
     FROM payments
-
     WHERE driver_id = ?
-
     AND status = 'Paid'
 ";
 
@@ -228,9 +223,8 @@ $payments_sql = "
 
     WHERE payments.driver_id = ?
 
-    ORDER BY
-        payments.payment_date DESC,
-        payments.id DESC
+    ORDER BY payments.payment_date DESC,
+             payments.id DESC
 ";
 
 $payments_stmt = mysqli_prepare(
@@ -270,67 +264,6 @@ if ($payments_stmt) {
     );
 }
 
-
-// =====================================================
-// DEMO UPI PAYMENT
-// =====================================================
-
-$upi_id = "taxi@upi";
-
-$qr_url = "";
-
-$rent_amount = 0;
-
-if ($assignment) {
-
-    $rent_amount =
-        (float) $assignment["rent"];
-
-    $amount_for_upi =
-        number_format(
-            $rent_amount,
-            2,
-            ".",
-            ""
-        );
-
-
-    /*
-     * UPI PAYMENT LINK
-     *
-     * NOTE:
-     * taxi@upi is a demo/example UPI ID.
-     */
-
-    $upi_link =
-        "upi://pay"
-        . "?pa="
-        . urlencode($upi_id)
-        . "&pn="
-        . urlencode(
-            "Taxi Management System"
-        )
-        . "&am="
-        . urlencode(
-            $amount_for_upi
-        )
-        . "&cu=INR";
-
-
-    /*
-     * QR CODE
-     *
-     * QRServer is used only to generate
-     * the visual QR code.
-     */
-
-    $qr_url =
-        "https://api.qrserver.com/v1/create-qr-code/"
-        . "?size=250x250"
-        . "&data="
-        . urlencode($upi_link);
-}
-
 ?>
 
 <!DOCTYPE html>
@@ -350,18 +283,12 @@ if ($assignment) {
         Rent Payments - Taxi Management System
     </title>
 
-
     <link
         rel="stylesheet"
         href="../css/style.css"
     >
 
-
     <style>
-
-        /* ================================================= */
-        /* MAIN */
-        /* ================================================= */
 
         .payments-container {
 
@@ -370,11 +297,6 @@ if ($assignment) {
             margin: 30px auto;
 
         }
-
-
-        /* ================================================= */
-        /* PAYMENT GRID */
-        /* ================================================= */
 
         .payment-grid {
 
@@ -392,7 +314,6 @@ if ($assignment) {
 
         }
 
-
         .payment-card {
 
             border: 1px solid #ddd;
@@ -405,13 +326,11 @@ if ($assignment) {
 
         }
 
-
         .payment-card h3 {
 
             margin-top: 0;
 
         }
-
 
         .amount {
 
@@ -421,11 +340,6 @@ if ($assignment) {
 
         }
 
-
-        /* ================================================= */
-        /* STATUS */
-        /* ================================================= */
-
         .paid {
 
             color: green;
@@ -433,7 +347,6 @@ if ($assignment) {
             font-weight: bold;
 
         }
-
 
         .pending {
 
@@ -443,7 +356,6 @@ if ($assignment) {
 
         }
 
-
         .failed {
 
             color: #b91c1c;
@@ -451,11 +363,6 @@ if ($assignment) {
             font-weight: bold;
 
         }
-
-
-        /* ================================================= */
-        /* TAXI CARD */
-        /* ================================================= */
 
         .taxi-card {
 
@@ -467,10 +374,7 @@ if ($assignment) {
 
             margin-bottom: 25px;
 
-            background: #fff;
-
         }
-
 
         .payment-row {
 
@@ -486,149 +390,11 @@ if ($assignment) {
 
         }
 
-
         .payment-row:last-child {
 
             border-bottom: none;
 
         }
-
-
-        /* ================================================= */
-        /* QR PAYMENT */
-        /* ================================================= */
-
-        .qr-payment-box {
-
-            margin-top: 25px;
-
-            padding: 30px;
-
-            border: 2px solid #222;
-
-            border-radius: 12px;
-
-            background: #fff;
-
-            text-align: center;
-
-        }
-
-
-        .qr-payment-box h2 {
-
-            margin-top: 0;
-
-        }
-
-
-        .qr-code {
-
-            width: 250px;
-
-            height: 250px;
-
-            display: block;
-
-            margin: 20px auto;
-
-            padding: 8px;
-
-            background: #fff;
-
-            border: 1px solid #ddd;
-
-            border-radius: 8px;
-
-        }
-
-
-        .upi-id {
-
-            font-size: 18px;
-
-            font-weight: bold;
-
-        }
-
-
-        .qr-amount {
-
-            font-size: 22px;
-
-            font-weight: bold;
-
-            margin: 15px 0;
-
-        }
-
-
-        .payment-instruction {
-
-            color: #555;
-
-        }
-
-
-        .demo-warning {
-
-            margin-top: 15px;
-
-            padding: 12px;
-
-            background: #fff3cd;
-
-            border-radius: 6px;
-
-            color: #856404;
-
-        }
-
-
-        /* ================================================= */
-        /* TABLE */
-        /* ================================================= */
-
-        .table-container {
-
-            overflow-x: auto;
-
-        }
-
-
-        table {
-
-            width: 100%;
-
-            border-collapse: collapse;
-
-            background: #fff;
-
-        }
-
-
-        th,
-        td {
-
-            border: 1px solid #ddd;
-
-            padding: 12px;
-
-            text-align: left;
-
-        }
-
-
-        th {
-
-            background: #f3f3f3;
-
-        }
-
-
-        /* ================================================= */
-        /* BACK BUTTON */
-        /* ================================================= */
 
         .back-button {
 
@@ -646,10 +412,38 @@ if ($assignment) {
 
         }
 
+        .table-container {
 
-        /* ================================================= */
-        /* MOBILE */
-        /* ================================================= */
+            overflow-x: auto;
+
+        }
+
+        table {
+
+            width: 100%;
+
+            border-collapse: collapse;
+
+            background: #fff;
+
+        }
+
+        th,
+        td {
+
+            border: 1px solid #ddd;
+
+            padding: 12px;
+
+            text-align: left;
+
+        }
+
+        th {
+
+            background: #f3f3f3;
+
+        }
 
         @media (max-width: 600px) {
 
@@ -658,15 +452,6 @@ if ($assignment) {
                 flex-direction: column;
 
                 gap: 5px;
-
-            }
-
-
-            .qr-code {
-
-                width: 200px;
-
-                height: 200px;
 
             }
 
@@ -690,23 +475,19 @@ if ($assignment) {
         Taxi Management System
     </h1>
 
-
     <nav>
 
         <a href="dashboard.php">
             Dashboard
         </a>
 
-
         <a href="payments.php">
             Rent Payments
         </a>
 
-
         <a href="../index2.php#taxis">
             Taxi Availability
         </a>
-
 
         <a href="logout.php">
             Logout
@@ -734,17 +515,13 @@ if ($assignment) {
             Rent Payments
         </h2>
 
-
         <p>
 
             Welcome,
-
             <?php
-
             echo htmlspecialchars(
                 $driver["name"]
             );
-
             ?>
 
         </p>
@@ -764,18 +541,14 @@ if ($assignment) {
                 Current Taxi
             </h2>
 
-
             <div class="taxi-card">
 
-
-                <!-- TAXI -->
 
                 <div class="payment-row">
 
                     <strong>
                         Taxi
                     </strong>
-
 
                     <span>
 
@@ -794,14 +567,11 @@ if ($assignment) {
                 </div>
 
 
-                <!-- REGISTRATION -->
-
                 <div class="payment-row">
 
                     <strong>
                         Registration Number
                     </strong>
-
 
                     <span>
 
@@ -820,14 +590,11 @@ if ($assignment) {
                 </div>
 
 
-                <!-- DAILY RENT -->
-
                 <div class="payment-row">
 
                     <strong>
                         Daily Rent
                     </strong>
-
 
                     <span>
 
@@ -841,21 +608,16 @@ if ($assignment) {
 
                         ?>
 
-                        / day
-
                     </span>
 
                 </div>
 
-
-                <!-- ASSIGNED AT -->
 
                 <div class="payment-row">
 
                     <strong>
                         Assigned At
                     </strong>
-
 
                     <span>
 
@@ -878,118 +640,7 @@ if ($assignment) {
 
         </section>
 
-
-        <!-- ================================================= -->
-        <!-- QR PAYMENT -->
-        <!-- ================================================= -->
-
-        <section>
-
-            <div class="qr-payment-box">
-
-                <h2>
-                    💳 Pay Taxi Rent
-                </h2>
-
-
-                <p>
-                    Scan the QR code below to pay
-                    your taxi rent.
-                </p>
-
-
-                <!-- QR CODE -->
-
-                <?php if ($qr_url !== ""): ?>
-
-                    <img
-                        src="<?php
-                            echo htmlspecialchars(
-                                $qr_url
-                            );
-                        ?>"
-                        alt="Taxi Rent Payment QR Code"
-                        class="qr-code"
-                    >
-
-                <?php endif; ?>
-
-
-                <!-- AMOUNT -->
-
-                <div class="qr-amount">
-
-                    Amount:
-
-                    ₹<?php
-
-                    echo number_format(
-                        $rent_amount,
-                        2
-                    );
-
-                    ?>
-
-                </div>
-
-
-                <!-- UPI -->
-
-                <p>
-
-                    UPI ID:
-
-                    <span class="upi-id">
-
-                        <?php
-
-                        echo htmlspecialchars(
-                            $upi_id
-                        );
-
-                        ?>
-
-                    </span>
-
-                </p>
-
-
-                <p class="payment-instruction">
-
-                    Scan this QR code using
-                    Google Pay, PhonePe,
-                    Paytm or another UPI app.
-
-                </p>
-
-
-                <div class="demo-warning">
-
-                    <strong>
-                        Demo Payment
-                    </strong>
-
-                    <br>
-
-                    This project currently uses
-                    <strong>
-                        taxi@upi
-                    </strong>
-                    as an example UPI ID.
-
-                    Replace it with your real
-                    UPI ID before using this system
-                    for actual payments.
-
-                </div>
-
-            </div>
-
-        </section>
-
-
     <?php else: ?>
-
 
         <section>
 
@@ -999,14 +650,10 @@ if ($assignment) {
                     No Taxi Assigned
                 </h3>
 
-
                 <p>
-
-                    You do not currently have
-                    an active taxi assignment.
-
+                    You do not currently have an active
+                    taxi assignment.
                 </p>
-
 
             </div>
 
@@ -1029,14 +676,11 @@ if ($assignment) {
         <div class="payment-grid">
 
 
-            <!-- TOTAL PAID -->
-
             <div class="payment-card">
 
                 <h3>
                     Total Paid
                 </h3>
-
 
                 <div class="amount">
 
@@ -1054,21 +698,16 @@ if ($assignment) {
             </div>
 
 
-            <!-- PAYMENT COUNT -->
-
             <div class="payment-card">
 
                 <h3>
                     Payments Made
                 </h3>
 
-
                 <div class="amount">
 
                     <?php
-
                     echo $payment_count;
-
                     ?>
 
                 </div>
@@ -1076,14 +715,11 @@ if ($assignment) {
             </div>
 
 
-            <!-- ACCOUNT STATUS -->
-
             <div class="payment-card">
 
                 <h3>
                     Account
                 </h3>
-
 
                 <div>
 
@@ -1112,7 +748,6 @@ if ($assignment) {
                         echo '<span class="failed">
                                 Inactive
                               </span>';
-
                     }
 
                     ?>
@@ -1196,11 +831,8 @@ if ($assignment) {
                         as $payment
                     ): ?>
 
-
                         <tr>
 
-
-                            <!-- PAYMENT ID -->
 
                             <td>
 
@@ -1213,8 +845,6 @@ if ($assignment) {
 
                             </td>
 
-
-                            <!-- DATE -->
 
                             <td>
 
@@ -1231,8 +861,6 @@ if ($assignment) {
                             </td>
 
 
-                            <!-- TAXI -->
-
                             <td>
 
                                 <?php
@@ -1247,8 +875,6 @@ if ($assignment) {
 
                             </td>
 
-
-                            <!-- REGISTRATION -->
 
                             <td>
 
@@ -1265,8 +891,6 @@ if ($assignment) {
                             </td>
 
 
-                            <!-- AMOUNT -->
-
                             <td>
 
                                 ₹<?php
@@ -1281,8 +905,6 @@ if ($assignment) {
 
                             </td>
 
-
-                            <!-- METHOD -->
 
                             <td>
 
@@ -1299,15 +921,12 @@ if ($assignment) {
                             </td>
 
 
-                            <!-- STATUS -->
-
                             <td>
 
                                 <?php
 
                                 $status =
                                     $payment["status"];
-
 
                                 if (
                                     $status === "Paid"
@@ -1332,15 +951,12 @@ if ($assignment) {
                                             $status
                                         )
                                         . '</span>';
-
                                 }
 
                                 ?>
 
                             </td>
 
-
-                            <!-- NOTES -->
 
                             <td>
 
@@ -1349,11 +965,9 @@ if ($assignment) {
                                 echo !empty(
                                     $payment["notes"]
                                 )
-
                                     ? htmlspecialchars(
                                         $payment["notes"]
                                     )
-
                                     : "-";
 
                                 ?>
@@ -1362,7 +976,6 @@ if ($assignment) {
 
 
                         </tr>
-
 
                     <?php endforeach; ?>
 
@@ -1383,20 +996,14 @@ if ($assignment) {
                     No Payment Records
                 </h3>
 
-
                 <p>
-
-                    No rent payments have been
-                    recorded for your account yet.
-
+                    No rent payments have been recorded
+                    for your account yet.
                 </p>
 
-
                 <p>
-
-                    Payments will appear here
-                    after the admin records them.
-
+                    Payments will appear here after
+                    the admin records them.
                 </p>
 
             </div>

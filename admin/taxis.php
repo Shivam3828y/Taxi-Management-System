@@ -1,8 +1,5 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 
 if (!isset($_SESSION["admin_id"])) {
@@ -25,56 +22,37 @@ if (
     && isset($_POST["add_taxi"])
 ) {
 
-    $brand = trim(
-        $_POST["brand"] ?? ""
-    );
+    csrf_verify();
 
-    $model = trim(
-        $_POST["model"] ?? ""
-    );
+    $brand = trim($_POST["brand"] ?? "");
 
-    $registration_number = trim(
-        $_POST["registration_number"] ?? ""
-    );
+    $model = trim($_POST["model"] ?? "");
 
-    $rent = trim(
-        $_POST["rent"] ?? ""
-    );
+    $registration_number =
+        trim($_POST["registration_number"] ?? "");
 
+    $rent = trim($_POST["rent"] ?? "");
 
-    // =================================================
-    // VALIDATION
-    // =================================================
+    $status =
+        $_POST["status"] ?? "Available";
+
 
     if (
-        $brand === ""
-        || $model === ""
-        || $registration_number === ""
-        || $rent === ""
+        $brand === "" ||
+        $model === "" ||
+        $registration_number === "" ||
+        $rent === ""
     ) {
 
         $error =
             "Please fill all required fields.";
 
-    } elseif (
-        !is_numeric($rent)
-        || (float)$rent < 0
-    ) {
+    } elseif (!is_numeric($rent) || $rent < 0) {
 
         $error =
             "Please enter a valid rent.";
 
     } else {
-
-
-        /*
-         * A newly added taxi must start as Available.
-         *
-         * Assigned status should be controlled by the
-         * assignment system, not manually during creation.
-         */
-
-        $status = "Available";
 
 
         $sql = "
@@ -90,10 +68,11 @@ if (
         ";
 
 
-        $stmt = mysqli_prepare(
-            $conn,
-            $sql
-        );
+        $stmt =
+            mysqli_prepare(
+                $conn,
+                $sql
+            );
 
 
         if (!$stmt) {
@@ -103,6 +82,7 @@ if (
                 . mysqli_error($conn);
 
         } else {
+
 
             mysqli_stmt_bind_param(
                 $stmt,
@@ -116,17 +96,18 @@ if (
 
 
             if (
-                mysqli_stmt_execute($stmt)
+                mysqli_stmt_execute(
+                    $stmt
+                )
             ) {
 
                 $message =
-                    "Taxi added successfully "
-                    . "and marked as Available.";
+                    "Taxi added successfully.";
 
             } else {
 
                 if (
-                    mysqli_errno($conn) === 1062
+                    mysqli_errno($conn) == 1062
                 ) {
 
                     $error =
@@ -135,8 +116,7 @@ if (
                 } else {
 
                     $error =
-                        "Failed to add taxi: "
-                        . mysqli_error($conn);
+                        "Failed to add taxi.";
 
                 }
 
@@ -144,11 +124,8 @@ if (
 
 
             mysqli_stmt_close($stmt);
-
         }
-
     }
-
 }
 
 
@@ -161,13 +138,13 @@ if (
     && isset($_POST["update_rent"])
 ) {
 
-    $taxi_id = (int)(
-        $_POST["taxi_id"] ?? 0
-    );
+    csrf_verify();
 
-    $new_rent = trim(
-        $_POST["new_rent"] ?? ""
-    );
+    $taxi_id =
+        (int)($_POST["taxi_id"] ?? 0);
+
+    $new_rent =
+        trim($_POST["new_rent"] ?? "");
 
 
     if ($taxi_id <= 0) {
@@ -178,7 +155,7 @@ if (
     } elseif (
         $new_rent === ""
         || !is_numeric($new_rent)
-        || (float)$new_rent < 0
+        || $new_rent < 0
     ) {
 
         $error =
@@ -187,25 +164,21 @@ if (
     } else {
 
 
-        // =============================================
-        // CHECK TAXI EXISTS
-        // =============================================
-
-        $check_sql = "
-            SELECT id
-            FROM taxis
+        $sql = "
+            UPDATE taxis
+            SET rent = ?
             WHERE id = ?
-            LIMIT 1
         ";
 
 
-        $check_stmt = mysqli_prepare(
-            $conn,
-            $check_sql
-        );
+        $stmt =
+            mysqli_prepare(
+                $conn,
+                $sql
+            );
 
 
-        if (!$check_stmt) {
+        if (!$stmt) {
 
             $error =
                 "Database error: "
@@ -213,300 +186,35 @@ if (
 
         } else {
 
+
             mysqli_stmt_bind_param(
-                $check_stmt,
-                "i",
+                $stmt,
+                "di",
+                $new_rent,
                 $taxi_id
             );
 
-            mysqli_stmt_execute(
-                $check_stmt
-            );
-
-            $check_result =
-                mysqli_stmt_get_result(
-                    $check_stmt
-                );
-
 
             if (
-                mysqli_num_rows($check_result) === 0
+                mysqli_stmt_execute(
+                    $stmt
+                )
             ) {
 
-                $error =
-                    "Taxi not found.";
+                $message =
+                    "Taxi rent updated successfully.";
 
             } else {
 
-
-                // =====================================
-                // UPDATE RENT
-                // =====================================
-
-                $sql = "
-                    UPDATE taxis
-                    SET rent = ?
-                    WHERE id = ?
-                ";
-
-
-                $stmt = mysqli_prepare(
-                    $conn,
-                    $sql
-                );
-
-
-                if (!$stmt) {
-
-                    $error =
-                        "Database error: "
-                        . mysqli_error($conn);
-
-                } else {
-
-                    mysqli_stmt_bind_param(
-                        $stmt,
-                        "di",
-                        $new_rent,
-                        $taxi_id
-                    );
-
-
-                    if (
-                        mysqli_stmt_execute($stmt)
-                    ) {
-
-                        $message =
-                            "Taxi rent updated successfully.";
-
-                    } else {
-
-                        $error =
-                            "Failed to update taxi rent: "
-                            . mysqli_error($conn);
-
-                    }
-
-
-                    mysqli_stmt_close($stmt);
-
-                }
+                $error =
+                    "Failed to update taxi rent.";
 
             }
 
 
-            mysqli_stmt_close(
-                $check_stmt
-            );
-
+            mysqli_stmt_close($stmt);
         }
-
     }
-
-}
-
-
-// =====================================================
-// UPDATE TAXI STATUS
-// =====================================================
-
-if (
-    $_SERVER["REQUEST_METHOD"] === "POST"
-    && isset($_POST["update_status"])
-) {
-
-    $taxi_id = (int)(
-        $_POST["taxi_id"] ?? 0
-    );
-
-    $new_status = trim(
-        $_POST["new_status"] ?? ""
-    );
-
-
-    /*
-     * Assigned is intentionally NOT allowed here.
-     *
-     * Assignment status should be controlled by
-     * assignments.php.
-     */
-
-    $allowed_statuses = [
-        "Available",
-        "Maintenance",
-        "Inactive"
-    ];
-
-
-    if ($taxi_id <= 0) {
-
-        $error =
-            "Invalid taxi.";
-
-    } elseif (
-        !in_array(
-            $new_status,
-            $allowed_statuses,
-            true
-        )
-    ) {
-
-        $error =
-            "Invalid taxi status.";
-
-    } else {
-
-
-        // =============================================
-        // CHECK ACTIVE ASSIGNMENT
-        // =============================================
-
-        $check_sql = "
-            SELECT id
-            FROM assignments
-            WHERE taxi_id = ?
-            AND status = 'Active'
-            LIMIT 1
-        ";
-
-
-        $check_stmt = mysqli_prepare(
-            $conn,
-            $check_sql
-        );
-
-
-        if (!$check_stmt) {
-
-            $error =
-                "Database error: "
-                . mysqli_error($conn);
-
-        } else {
-
-            mysqli_stmt_bind_param(
-                $check_stmt,
-                "i",
-                $taxi_id
-            );
-
-            mysqli_stmt_execute(
-                $check_stmt
-            );
-
-            $check_result =
-                mysqli_stmt_get_result(
-                    $check_stmt
-                );
-
-
-            $has_active_assignment =
-                mysqli_num_rows(
-                    $check_result
-                ) > 0;
-
-
-            /*
-             * A taxi with an active assignment cannot
-             * be manually changed to Maintenance or
-             * Inactive.
-             *
-             * The assignment must be ended first.
-             */
-
-            if (
-                $has_active_assignment
-                && $new_status !== "Available"
-            ) {
-
-                $error =
-                    "This taxi has an active assignment. "
-                    . "End the assignment before changing "
-                    . "the taxi to Maintenance or Inactive.";
-
-            } elseif (
-                $has_active_assignment
-                && $new_status === "Available"
-            ) {
-
-                /*
-                 * Do not allow Available while an active
-                 * assignment still exists.
-                 */
-
-                $error =
-                    "This taxi has an active assignment "
-                    . "and cannot be marked Available.";
-
-            } else {
-
-
-                // =====================================
-                // UPDATE STATUS
-                // =====================================
-
-                $sql = "
-                    UPDATE taxis
-                    SET status = ?
-                    WHERE id = ?
-                ";
-
-
-                $stmt = mysqli_prepare(
-                    $conn,
-                    $sql
-                );
-
-
-                if (!$stmt) {
-
-                    $error =
-                        "Database error: "
-                        . mysqli_error($conn);
-
-                } else {
-
-                    mysqli_stmt_bind_param(
-                        $stmt,
-                        "si",
-                        $new_status,
-                        $taxi_id
-                    );
-
-
-                    if (
-                        mysqli_stmt_execute($stmt)
-                    ) {
-
-                        $message =
-                            "Taxi status updated to "
-                            . $new_status
-                            . ".";
-
-                    } else {
-
-                        $error =
-                            "Failed to update taxi status: "
-                            . mysqli_error($conn);
-
-                    }
-
-
-                    mysqli_stmt_close($stmt);
-
-                }
-
-            }
-
-
-            mysqli_stmt_close(
-                $check_stmt
-            );
-
-        }
-
-    }
-
 }
 
 
@@ -515,32 +223,17 @@ if (
 // =====================================================
 
 $sql = "
-    SELECT
-        id,
-        brand,
-        model,
-        registration_number,
-        rent,
-        status,
-        created_at
+    SELECT *
     FROM taxis
     ORDER BY id DESC
 ";
 
 
-$result = mysqli_query(
-    $conn,
-    $sql
-);
-
-
-if (!$result) {
-
-    $error =
-        "Failed to load taxis: "
-        . mysqli_error($conn);
-
-}
+$result =
+    mysqli_query(
+        $conn,
+        $sql
+    );
 
 ?>
 
@@ -559,7 +252,7 @@ if (!$result) {
     >
 
     <title>
-        Taxi Management - Taxi Management System
+        Taxi Management
     </title>
 
 
@@ -571,180 +264,11 @@ if (!$result) {
 
     <style>
 
-        .page-container {
-
-            max-width: 1200px;
-
-            margin: 30px auto;
-
-        }
-
-
-        .form-card,
-        .list-card {
-
-            background: #fff;
-
-            border: 1px solid #ddd;
-
-            border-radius: 10px;
-
-            padding: 20px;
-
-            margin-bottom: 30px;
-
-        }
-
-
-        .form-group {
-
-            margin-bottom: 15px;
-
-        }
-
-
-        .form-group label {
-
-            display: block;
-
-            margin-bottom: 6px;
-
-            font-weight: bold;
-
-        }
-
-
-        .form-group input,
-        .form-group select {
-
-            width: 100%;
-
-            box-sizing: border-box;
-
-            padding: 10px;
-
-        }
-
-
-        .required {
-
-            color: #b91c1c;
-
-        }
-
-
-        .success-message {
-
-            padding: 12px;
-
-            margin-bottom: 20px;
-
-            background: #f0fdf4;
-
-            border: 1px solid #86efac;
-
-            color: #166534;
-
-            border-radius: 6px;
-
-        }
-
-
-        .error-message {
-
-            padding: 12px;
-
-            margin-bottom: 20px;
-
-            background: #fef2f2;
-
-            border: 1px solid #fca5a5;
-
-            color: #991b1b;
-
-            border-radius: 6px;
-
-        }
-
-
-        .table-container {
-
-            overflow-x: auto;
-
-        }
-
-
-        table {
-
-            width: 100%;
-
-            border-collapse: collapse;
-
-            min-width: 1000px;
-
-        }
-
-
-        th,
-        td {
-
-            padding: 10px;
-
-            border: 1px solid #ddd;
-
-            text-align: left;
-
-        }
-
-
-        th {
-
-            background: #f5f5f5;
-
-        }
-
-
-        .status {
-
-            font-weight: bold;
-
-        }
-
-
-        .status-available {
-
-            color: #15803d;
-
-        }
-
-
-        .status-assigned {
-
-            color: #1d4ed8;
-
-        }
-
-
-        .status-maintenance {
-
-            color: #b45309;
-
-        }
-
-
-        .status-inactive {
-
-            color: #b91c1c;
-
-        }
-
-
-        .rent-update-form,
-        .status-update-form {
+        .rent-update-form {
 
             display: flex;
 
-            gap: 6px;
+            gap: 5px;
 
             align-items: center;
 
@@ -755,40 +279,19 @@ if (!$result) {
 
             width: 100px;
 
-            padding: 7px;
+        }
+
+
+        .success-message {
+
+            color: green;
 
         }
 
 
-        .status-update-form select {
+        .error-message {
 
-            padding: 7px;
-
-        }
-
-
-        .action-button {
-
-            padding: 7px 10px;
-
-            border: 1px solid #333;
-
-            border-radius: 5px;
-
-            background: #fff;
-
-            cursor: pointer;
-
-        }
-
-
-        @media (max-width: 700px) {
-
-            .page-container {
-
-                margin: 20px 10px;
-
-            }
+            color: red;
 
         }
 
@@ -833,6 +336,10 @@ if (!$result) {
             Agreements
         </a>
 
+        <a href="payments.php">
+            Payments
+        </a>
+
         <a href="../index2.php">
             Public Portal
         </a>
@@ -846,579 +353,404 @@ if (!$result) {
 </header>
 
 
+<main>
+
+
 <!-- ================================================= -->
-<!-- MAIN -->
+<!-- ADD TAXI -->
 <!-- ================================================= -->
 
-<main class="page-container">
+<section>
 
+    <h2>
+        Add Taxi
+    </h2>
 
-    <!-- ================================================= -->
-    <!-- MESSAGES -->
-    <!-- ================================================= -->
 
     <?php if ($message !== ""): ?>
 
-        <div class="success-message">
+        <p class="success-message">
 
             <?php
             echo htmlspecialchars($message);
             ?>
 
-        </div>
+        </p>
 
     <?php endif; ?>
 
 
     <?php if ($error !== ""): ?>
 
-        <div class="error-message">
+        <p class="error-message">
 
             <?php
             echo htmlspecialchars($error);
             ?>
 
-        </div>
+        </p>
 
     <?php endif; ?>
 
 
-    <!-- ================================================= -->
-    <!-- ADD TAXI -->
-    <!-- ================================================= -->
+    <form method="POST">
 
-    <section class="form-card">
+    <?php csrf_field(); ?>
 
-        <h2>
-            Add Taxi
-        </h2>
-
-
-        <p>
-            New taxis are automatically added as
-            <strong>Available</strong>.
-        </p>
+        <input
+            type="hidden"
+            name="add_taxi"
+            value="1"
+        >
 
 
-        <form method="POST">
+        <div>
 
+            <label for="brand">
+                Brand
+            </label>
 
             <input
-                type="hidden"
-                name="add_taxi"
-                value="1"
+                type="text"
+                id="brand"
+                name="brand"
+                required
             >
 
+        </div>
 
-            <!-- BRAND -->
 
-            <div class="form-group">
+        <br>
 
-                <label for="brand">
 
-                    Brand
+        <div>
 
-                    <span class="required">*</span>
+            <label for="model">
+                Model
+            </label>
 
-                </label>
+            <input
+                type="text"
+                id="model"
+                name="model"
+                required
+            >
 
-                <input
-                    type="text"
-                    id="brand"
-                    name="brand"
-                    maxlength="50"
-                    required
-                >
+        </div>
 
-            </div>
 
+        <br>
 
-            <!-- MODEL -->
 
-            <div class="form-group">
+        <div>
 
-                <label for="model">
+            <label for="registration_number">
+                Registration Number
+            </label>
 
-                    Model
+            <input
+                type="text"
+                id="registration_number"
+                name="registration_number"
+                required
+            >
 
-                    <span class="required">*</span>
+        </div>
 
-                </label>
 
-                <input
-                    type="text"
-                    id="model"
-                    name="model"
-                    maxlength="50"
-                    required
-                >
+        <br>
 
-            </div>
 
+        <div>
 
-            <!-- REGISTRATION -->
+            <label for="rent">
+                Rent
+            </label>
 
-            <div class="form-group">
+            <input
+                type="number"
+                id="rent"
+                name="rent"
+                step="0.01"
+                min="0"
+                required
+            >
 
-                <label for="registration_number">
+        </div>
 
-                    Registration Number
 
-                    <span class="required">*</span>
+        <br>
 
-                </label>
 
-                <input
-                    type="text"
-                    id="registration_number"
-                    name="registration_number"
-                    maxlength="20"
-                    required
-                >
+        <div>
 
-            </div>
+            <label for="status">
+                Status
+            </label>
 
+            <select
+                id="status"
+                name="status"
+            >
 
-            <!-- RENT -->
+                <option value="Available">
+                    Available
+                </option>
 
-            <div class="form-group">
+                <option value="Assigned">
+                    Assigned
+                </option>
 
-                <label for="rent">
+                <option value="Maintenance">
+                    Maintenance
+                </option>
 
-                    Daily Rent (₹)
+            </select>
 
-                    <span class="required">*</span>
+        </div>
 
-                </label>
 
-                <input
-                    type="number"
-                    id="rent"
-                    name="rent"
-                    step="0.01"
-                    min="0"
-                    required
-                >
+        <br>
 
-            </div>
 
+        <button type="submit">
+            Add Taxi
+        </button>
 
-            <button type="submit">
-                Add Taxi
-            </button>
+    </form>
 
+</section>
 
-        </form>
 
-    </section>
+<!-- ================================================= -->
+<!-- TAXI LIST -->
+<!-- ================================================= -->
 
+<section>
 
-    <!-- ================================================= -->
-    <!-- TAXI LIST -->
-    <!-- ================================================= -->
+    <h2>
+        Taxi List
+    </h2>
 
-    <section class="list-card">
 
-        <h2>
-            Taxi List
-        </h2>
+    <?php if (
+        $result &&
+        mysqli_num_rows($result) > 0
+    ): ?>
 
 
-        <?php if (
-            $result
-            && mysqli_num_rows($result) > 0
-        ): ?>
+        <table
+            border="1"
+            cellpadding="10"
+        >
 
+            <thead>
 
-            <div class="table-container">
+                <tr>
 
-                <table>
+                    <th>
+                        ID
+                    </th>
 
-                    <thead>
+                    <th>
+                        Brand
+                    </th>
 
-                        <tr>
+                    <th>
+                        Model
+                    </th>
 
-                            <th>
-                                ID
-                            </th>
+                    <th>
+                        Registration
+                    </th>
 
-                            <th>
-                                Brand
-                            </th>
+                    <th>
+                        Current Rent
+                    </th>
 
-                            <th>
-                                Model
-                            </th>
+                    <th>
+                        Update Rent
+                    </th>
 
-                            <th>
-                                Registration
-                            </th>
+                    <th>
+                        Status
+                    </th>
 
-                            <th>
-                                Current Rent
-                            </th>
+                </tr>
 
-                            <th>
-                                Update Rent
-                            </th>
+            </thead>
 
-                            <th>
-                                Status
-                            </th>
 
-                            <th>
-                                Update Status
-                            </th>
+            <tbody>
 
-                            <th>
-                                Created
-                            </th>
 
-                        </tr>
+                <?php while (
+                    $taxi =
+                    mysqli_fetch_assoc($result)
+                ): ?>
 
-                    </thead>
 
+                    <tr>
 
-                    <tbody>
 
+                        <td>
 
-                    <?php while (
-                        $taxi =
-                        mysqli_fetch_assoc($result)
-                    ): ?>
+                            <?php
+                            echo $taxi["id"];
+                            ?>
 
+                        </td>
 
-                        <tr>
 
+                        <td>
 
-                            <!-- ID -->
+                            <?php
 
-                            <td>
+                            echo htmlspecialchars(
+                                $taxi["brand"]
+                            );
 
-                                <?php
-                                echo (int)
-                                    $taxi["id"];
-                                ?>
+                            ?>
 
-                            </td>
+                        </td>
 
 
-                            <!-- BRAND -->
+                        <td>
 
-                            <td>
+                            <?php
 
-                                <?php
-                                echo htmlspecialchars(
-                                    $taxi["brand"]
-                                );
-                                ?>
+                            echo htmlspecialchars(
+                                $taxi["model"]
+                            );
 
-                            </td>
+                            ?>
 
+                        </td>
 
-                            <!-- MODEL -->
 
-                            <td>
+                        <td>
 
-                                <?php
-                                echo htmlspecialchars(
-                                    $taxi["model"]
-                                );
-                                ?>
+                            <?php
 
-                            </td>
+                            echo htmlspecialchars(
+                                $taxi[
+                                    "registration_number"
+                                ]
+                            );
 
+                            ?>
 
-                            <!-- REGISTRATION -->
+                        </td>
 
-                            <td>
 
-                                <?php
-                                echo htmlspecialchars(
-                                    $taxi[
-                                        "registration_number"
-                                    ]
-                                );
-                                ?>
+                        <!-- CURRENT RENT -->
 
-                            </td>
+                        <td>
 
+                            ₹<?php
 
-                            <!-- CURRENT RENT -->
+                            echo number_format(
+                                (float)$taxi["rent"],
+                                2
+                            );
 
-                            <td>
+                            ?>
 
-                                ₹<?php
+                            / day
 
-                                echo number_format(
-                                    (float)$taxi["rent"],
-                                    2
-                                );
+                        </td>
 
-                                ?>
 
-                                / day
+                        <!-- UPDATE RENT -->
 
-                            </td>
+                        <td>
 
+                            <form
+                                method="POST"
+                                class="rent-update-form"
+                            >
 
-                            <!-- UPDATE RENT -->
+                                <?php csrf_field(); ?>
 
-                            <td>
-
-                                <form
-                                    method="POST"
-                                    class="rent-update-form"
+                                <input
+                                    type="hidden"
+                                    name="update_rent"
+                                    value="1"
                                 >
 
-                                    <input
-                                        type="hidden"
-                                        name="update_rent"
-                                        value="1"
-                                    >
 
-                                    <input
-                                        type="hidden"
-                                        name="taxi_id"
-                                        value="<?php
-                                            echo (int)
-                                                $taxi["id"];
-                                        ?>"
-                                    >
-
-                                    <input
-                                        type="number"
-                                        name="new_rent"
-                                        value="<?php
-                                            echo htmlspecialchars(
-                                                $taxi["rent"]
-                                            );
-                                        ?>"
-                                        step="0.01"
-                                        min="0"
-                                        required
-                                    >
-
-                                    <button
-                                        type="submit"
-                                        class="action-button"
-                                    >
-                                        Update
-                                    </button>
-
-                                </form>
-
-                            </td>
-
-
-                            <!-- STATUS -->
-
-                            <td>
-
-                                <?php
-
-                                $status_class =
-                                    "status-inactive";
-
-
-                                if (
-                                    $taxi["status"]
-                                    === "Available"
-                                ) {
-
-                                    $status_class =
-                                        "status-available";
-
-                                } elseif (
-                                    $taxi["status"]
-                                    === "Assigned"
-                                ) {
-
-                                    $status_class =
-                                        "status-assigned";
-
-                                } elseif (
-                                    $taxi["status"]
-                                    === "Maintenance"
-                                ) {
-
-                                    $status_class =
-                                        "status-maintenance";
-
-                                }
-
-                                ?>
-
-                                <span
-                                    class="status
-                                    <?php
-                                    echo $status_class;
+                                <input
+                                    type="hidden"
+                                    name="taxi_id"
+                                    value="<?php
+                                        echo $taxi["id"];
                                     ?>"
                                 >
 
-                                    <?php
-                                    echo htmlspecialchars(
-                                        $taxi["status"]
-                                    );
-                                    ?>
 
-                                </span>
-
-                            </td>
-
-
-                            <!-- UPDATE STATUS -->
-
-                            <td>
-
-                                <?php if (
-                                    $taxi["status"]
-                                    === "Assigned"
-                                ): ?>
-
-                                    <span>
-                                        Controlled by Assignment
-                                    </span>
-
-                                <?php else: ?>
+                                <input
+                                    type="number"
+                                    name="new_rent"
+                                    value="<?php
+                                        echo $taxi["rent"];
+                                    ?>"
+                                    step="0.01"
+                                    min="0"
+                                    required
+                                >
 
 
-                                    <form
-                                        method="POST"
-                                        class="status-update-form"
-                                    >
+                                <button type="submit">
+                                    Update
+                                </button>
 
-                                        <input
-                                            type="hidden"
-                                            name="update_status"
-                                            value="1"
-                                        >
+                            </form>
 
-                                        <input
-                                            type="hidden"
-                                            name="taxi_id"
-                                            value="<?php
-                                                echo (int)
-                                                    $taxi["id"];
-                                            ?>"
-                                        >
+                        </td>
 
 
-                                        <select
-                                            name="new_status"
-                                            required
-                                        >
+                        <!-- STATUS -->
 
-                                            <option
-                                                value="Available"
-                                                <?php
-                                                if (
-                                                    $taxi["status"]
-                                                    === "Available"
-                                                ) {
-                                                    echo "selected";
-                                                }
-                                                ?>
-                                            >
-                                                Available
-                                            </option>
+                        <td>
+
+                            <?php
+
+                            echo htmlspecialchars(
+                                $taxi["status"]
+                            );
+
+                            ?>
+
+                        </td>
 
 
-                                            <option
-                                                value="Maintenance"
-                                                <?php
-                                                if (
-                                                    $taxi["status"]
-                                                    === "Maintenance"
-                                                ) {
-                                                    echo "selected";
-                                                }
-                                                ?>
-                                            >
-                                                Maintenance
-                                            </option>
+                    </tr>
 
 
-                                            <option
-                                                value="Inactive"
-                                                <?php
-                                                if (
-                                                    $taxi["status"]
-                                                    === "Inactive"
-                                                ) {
-                                                    echo "selected";
-                                                }
-                                                ?>
-                                            >
-                                                Inactive
-                                            </option>
-
-                                        </select>
+                <?php endwhile; ?>
 
 
-                                        <button
-                                            type="submit"
-                                            class="action-button"
-                                        >
-                                            Update
-                                        </button>
+            </tbody>
 
-                                    </form>
+        </table>
 
 
-                                <?php endif; ?>
-
-                            </td>
+    <?php else: ?>
 
 
-                            <!-- CREATED -->
-
-                            <td>
-
-                                <?php
-
-                                echo htmlspecialchars(
-                                    $taxi["created_at"]
-                                );
-
-                                ?>
-
-                            </td>
+        <p>
+            No taxis found.
+        </p>
 
 
-                        </tr>
+    <?php endif; ?>
 
 
-                    <?php endwhile; ?>
-
-
-                    </tbody>
-
-                </table>
-
-            </div>
-
-
-        <?php else: ?>
-
-
-            <p>
-                No taxis found.
-            </p>
-
-
-        <?php endif; ?>
-
-
-    </section>
+</section>
 
 
 </main>
 
-
-<!-- ================================================= -->
-<!-- FOOTER -->
-<!-- ================================================= -->
 
 <footer>
 

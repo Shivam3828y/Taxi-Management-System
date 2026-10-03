@@ -1,18 +1,14 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 require_once "config.php";
 
 
-// =====================================================
+// ==============================
 // AVAILABLE TAXIS
-// =====================================================
+// ==============================
 
 $sql = "
     SELECT
-        id,
         brand,
         model,
         registration_number,
@@ -27,6 +23,7 @@ $result = mysqli_query($conn, $sql);
 ?>
 
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
@@ -49,57 +46,43 @@ $result = mysqli_query($conn, $sql);
 
     <style>
 
-        /* =================================================
-           HERO
-        ================================================= */
+        /* ==============================
+           HOME PAGE
+        ============================== */
 
         .hero {
+
             text-align: center;
-            padding: 50px 20px;
+
+            padding: 40px 20px;
+
         }
+
 
         .hero h2 {
+
             margin-bottom: 10px;
+
         }
+
 
         .hero p {
-            max-width: 700px;
-            margin: 0 auto;
-        }
 
-
-        /* =================================================
-           BUTTON
-        ================================================= */
-
-        .button {
-            display: inline-block;
-            padding: 10px 18px;
-            border: 1px solid #333;
-            border-radius: 6px;
-            text-decoration: none;
-        }
-
-
-        /* =================================================
-           SECTION TITLE
-        ================================================= */
-
-        .section-title {
             margin-bottom: 20px;
+
         }
 
 
-        /* =================================================
-           ACCESS SECTION
-        ================================================= */
+        /* ==============================
+           ACCESS CARDS
+        ============================== */
 
         .access-container {
 
             display: grid;
 
             grid-template-columns:
-                repeat(2, 1fr);
+                repeat(3, 1fr);
 
             gap: 20px;
 
@@ -110,9 +93,9 @@ $result = mysqli_query($conn, $sql);
 
             border: 1px solid #ddd;
 
-            border-radius: 10px;
+            border-radius: 8px;
 
-            padding: 25px;
+            padding: 20px;
 
             background: #fff;
 
@@ -120,13 +103,28 @@ $result = mysqli_query($conn, $sql);
 
 
         .access-card h3 {
+
             margin-top: 0;
+
         }
 
 
-        /* =================================================
-           AVAILABLE TAXIS
-        ================================================= */
+        .access-card a {
+
+            display: inline-block;
+
+            margin-top: 10px;
+
+            padding: 8px 14px;
+
+            text-decoration: none;
+
+        }
+
+
+        /* ==============================
+           TAXI CARDS
+        ============================== */
 
         .taxi-container {
 
@@ -144,7 +142,7 @@ $result = mysqli_query($conn, $sql);
 
             border: 1px solid #ddd;
 
-            border-radius: 10px;
+            border-radius: 8px;
 
             padding: 20px;
 
@@ -154,33 +152,30 @@ $result = mysqli_query($conn, $sql);
 
 
         .taxi-card h3 {
+
             margin-top: 0;
+
         }
 
 
         .rent {
+
             font-weight: bold;
-        }
-
-
-        /* =================================================
-           RESPONSIVE
-        ================================================= */
-
-        @media (max-width: 900px) {
-
-            .taxi-container {
-                grid-template-columns: 1fr 1fr;
-            }
 
         }
 
 
-        @media (max-width: 600px) {
+        /* ==============================
+           MOBILE
+        ============================== */
+
+        @media (max-width: 800px) {
 
             .access-container,
             .taxi-container {
+
                 grid-template-columns: 1fr;
+
             }
 
         }
@@ -193,15 +188,16 @@ $result = mysqli_query($conn, $sql);
 <body>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- HEADER -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <header>
 
     <h1>
         Taxi Management System
     </h1>
+
 
     <nav>
 
@@ -210,19 +206,15 @@ $result = mysqli_query($conn, $sql);
         </a>
 
         <a href="#taxis">
-            Available Taxis
-        </a>
-
-        <a href="driver/register.php">
-            Driver Registration
-        </a>
-
-        <a href="driver/login.php">
-            Driver Login
+            Taxis
         </a>
 
         <a href="admin/login.php">
-            Admin Login
+            Admin
+        </a>
+
+        <a href="driver/login.php">
+            Driver
         </a>
 
     </nav>
@@ -230,75 +222,45 @@ $result = mysqli_query($conn, $sql);
 </header>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- MAIN -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <main>
 
 
-<!-- ================================================= -->
-<!-- HERO -->
-<!-- ================================================= -->
+<!-- ============================== -->
+<!-- WELCOME -->
+<!-- ============================== -->
 
 <section class="hero">
 
     <h2>
-        Taxi Management System
+        Welcome to the Taxi Management System
     </h2>
 
+
     <p>
-        A centralized system for managing drivers,
-        taxis, assignments, agreements and rent
-        payments.
+        Manage taxis, drivers, assignments,
+        agreements and other taxi operations
+        in one place.
     </p>
 
 </section>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- SYSTEM ACCESS -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <section>
 
-    <h2 class="section-title">
-        Access
+    <h2>
+        System Access
     </h2>
 
 
     <div class="access-container">
-
-
-        <!-- DRIVER -->
-
-        <article class="access-card">
-
-            <h3>
-                Driver Portal
-            </h3>
-
-            <p>
-                Existing drivers can login to
-                view their assigned taxi,
-                agreement and rent payments.
-            </p>
-
-            <a
-                class="button"
-                href="driver/login.php"
-            >
-                Driver Login
-            </a>
-
-            <a
-                class="button"
-                href="driver/register.php"
-            >
-                New Driver Registration
-            </a>
-
-        </article>
 
 
         <!-- ADMIN -->
@@ -306,21 +268,64 @@ $result = mysqli_query($conn, $sql);
         <article class="access-card">
 
             <h3>
-                Admin Panel
+                Admin
             </h3>
 
+
             <p>
-                Authorized administrators can
-                manage drivers, taxis,
-                assignments, agreements and
-                payments.
+                Manage drivers, taxis, assignments,
+                agreements, maintenance, fines
+                and payments.
             </p>
 
-            <a
-                class="button"
-                href="admin/login.php"
-            >
+
+            <a href="admin/login.php">
                 Admin Login
+            </a>
+
+        </article>
+
+
+        <!-- DRIVER -->
+
+        <article class="access-card">
+
+            <h3>
+                Driver
+            </h3>
+
+
+            <p>
+                Login to view your assignment,
+                agreement, taxi details and
+                payment information.
+            </p>
+
+
+            <a href="driver/login.php">
+                Driver Login
+            </a>
+
+        </article>
+
+
+        <!-- TAXIS -->
+
+        <article class="access-card">
+
+            <h3>
+                Available Taxis
+            </h3>
+
+
+            <p>
+                View taxis that are currently
+                available for assignment.
+            </p>
+
+
+            <a href="#taxis">
+                View Taxis
             </a>
 
         </article>
@@ -331,13 +336,13 @@ $result = mysqli_query($conn, $sql);
 </section>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- AVAILABLE TAXIS -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <section id="taxis">
 
-    <h2 class="section-title">
+    <h2>
         Available Taxis
     </h2>
 
@@ -396,28 +401,18 @@ $result = mysqli_query($conn, $sql);
 
                     <p class="rent">
 
-                        Daily Rent:
+                        Rent:
 
                         ₹<?php
 
                         echo number_format(
-                            (float)
-                            $taxi["rent"],
+                            (float)$taxi["rent"],
                             2
                         );
 
                         ?>
 
-                    </p>
-
-
-                    <p>
-
-                        Status:
-
-                        <strong>
-                            Available
-                        </strong>
+                        / day
 
                     </p>
 
@@ -448,9 +443,9 @@ $result = mysqli_query($conn, $sql);
 </main>
 
 
-<!-- ================================================= -->
+<!-- ============================== -->
 <!-- FOOTER -->
-<!-- ================================================= -->
+<!-- ============================== -->
 
 <footer>
 
