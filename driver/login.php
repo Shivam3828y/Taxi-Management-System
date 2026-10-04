@@ -1,47 +1,35 @@
 <?php
 
-session_start();
-
 require_once "../config.php";
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+if (isset($_SESSION["driver_id"])) {
+    header("Location: dashboard.php");
+    exit;
+}
+
 $error = "";
-
-
-// =====================================================
-// DRIVER LOGIN
-// =====================================================
+$success = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     csrf_verify();
 
     $phone = trim($_POST["phone"] ?? "");
+    $password = $_POST["password"] ?? "";
 
-    $password =
-        trim($_POST["password"] ?? "");
+    if ($phone === "" || $password === "") {
 
-
-    // =================================================
-    // VALIDATION
-    // =================================================
-
-    if (
-        $phone === "" ||
-        $password === ""
-    ) {
-
-        $error =
-            "Please enter your phone number and password.";
+        $error = "Please enter your phone number and password.";
 
     } else {
 
-
-        // =============================================
-        // FIND DRIVER
-        // =============================================
-
-        $sql = "
-            SELECT
+        $stmt = mysqli_prepare(
+            $conn,
+            "SELECT
                 id,
                 name,
                 phone,
@@ -50,23 +38,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 driving_license,
                 password,
                 status
-            FROM drivers
-            WHERE phone = ?
-            LIMIT 1
-        ";
-
-
-        $stmt = mysqli_prepare(
-            $conn,
-            $sql
+             FROM drivers
+             WHERE phone = ?
+             LIMIT 1"
         );
-
 
         if (!$stmt) {
 
-            $error =
-                "Database error: "
-                . mysqli_error($conn);
+            $error = "Database error. Please try again.";
 
         } else {
 
@@ -78,83 +57,118 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             mysqli_stmt_execute($stmt);
 
-            $result =
-                mysqli_stmt_get_result($stmt);
+            $result = mysqli_stmt_get_result($stmt);
 
+            $driver = mysqli_fetch_assoc($result);
 
-            // =========================================
-            // DRIVER FOUND
-            // =========================================
+            mysqli_stmt_close($stmt);
 
-            if (
-                mysqli_num_rows($result) === 1
-            ) {
+            if (!$driver) {
 
-                $driver =
-                    mysqli_fetch_assoc($result);
+                $error = "No driver account found with this phone number.";
 
-                $stored_password = $driver["password"] ?? "";
+            } else {
 
-                // Accounts created before the password field
-                // existed have no password saved yet. For those
-                // only, fall back to checking the driving license
-                // number they registered with (their original
-                // credential), then immediately save a real
-                // password hash so future logins use it instead.
-                if ($stored_password === "" || $stored_password === null) {
-                    $password_ok = hash_equals(
-                        (string) $driver["driving_license"],
-                        $password
-                    );
-                } else {
-                    $password_ok = verify_password($password, $stored_password);
-                }
+                /*
+                 * Password verification
+                 *
+                 * New accounts:
+                 * password column contains a password_hash()
+                 *
+                 * Legacy accounts:
+                 * password may be empty.
+                 * Driving license can temporarily be used
+                 * as the original credential.
+                 */
 
-                if (!$password_ok) {
+                $password_valid = false;
+                $legacy_login = false;
 
-                    $error =
-                        "Incorrect phone number or password.";
+                if (!empty($driver["password"])) {
 
-                } else {
-
-                if ($stored_password === "" || $stored_password === null || is_legacy_plain_password($stored_password)) {
-
-                    $new_hash = hash_password($password);
-
-                    $upgrade_stmt = mysqli_prepare(
-                        $conn,
-                        "UPDATE drivers SET password = ? WHERE id = ?"
+                    $password_valid = verify_password(
+                        $password,
+                        $driver["password"]
                     );
 
-                    if ($upgrade_stmt) {
-                        mysqli_stmt_bind_param(
-                            $upgrade_stmt,
-                            "si",
-                            $new_hash,
-                            $driver["id"]
-                        );
-                        mysqli_stmt_execute($upgrade_stmt);
-                        mysqli_stmt_close($upgrade_stmt);
+                } elseif (!empty($driver["driving_license"])) {
+
+                    $password_valid = hash_equals(
+                        strtolower(trim($driver["driving_license"])),
+                        strtolower(trim($password))
+                    );
+
+                    if ($password_valid) {
+                        $legacy_login = true;
                     }
                 }
 
+                if (!$password_valid) {
 
-                // =====================================
-                // CHECK STATUS
-                // =====================================
+                    $error = "Incorrect phone number or password.";
 
-                if (
-                    $driver["status"] === "Verified"
-                ) {
+                } elseif ($driver["status"] === "Pending") {
 
-                    // ===============================
-                    // CREATE SESSION
-                    // ===============================
+                    $error =
+                        "Your driver account is still pending verification by the admin.";
+
+                } elseif ($driver["status"] === "Inactive") {
+
+                    $error =
+                        "Your driver account is inactive. Please contact the administrator.";
+
+                } elseif ($driver["status"] !== "Verified") {
+
+                    $error =
+                        "Your driver account is not verified yet.";
+
+                } else {
+
+                    /*
+                     * Convert legacy login credentials
+                     * into a secure password hash.
+                     */
+
+                    if (
+                        $legacy_login ||
+                        (
+                            !empty($driver["password"]) &&
+                            is_legacy_plain_password($driver["password"])
+                        )
+                    ) {
+
+                        $new_hash = hash_password($password);
+
+                        $update_stmt = mysqli_prepare(
+                            $conn,
+                            "UPDATE drivers
+                             SET password = ?
+                             WHERE id = ?"
+                        );
+
+                        if ($update_stmt) {
+
+                            mysqli_stmt_bind_param(
+                                $update_stmt,
+                                "si",
+                                $new_hash,
+                                $driver["id"]
+                            );
+
+                            mysqli_stmt_execute($update_stmt);
+
+                            mysqli_stmt_close($update_stmt);
+                        }
+                    }
+
+                    /*
+                     * Create a new session ID after successful login.
+                     */
 
                     session_regenerate_id(true);
 
                     $_SESSION["driver_id"] =
-                        $driver["id"];
+                        (int)$driver["id"];
 
                     $_SESSION["driver_name"] =
                         $driver["name"];
@@ -162,67 +176,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $_SESSION["driver_phone"] =
                         $driver["phone"];
 
-
-                    // ===============================
-                    // DASHBOARD
-                    // ===============================
-
-                    header(
-                        "Location: dashboard.php"
-                    );
-
+                    header("Location: dashboard.php");
                     exit;
-
-
-                } elseif (
-                    $driver["status"] === "Pending"
-                ) {
-
-                    $error =
-                        "Your registration is pending admin verification. "
-                        . "Please wait until the admin verifies your account.";
-
-
-                } elseif (
-                    $driver["status"] === "Inactive"
-                ) {
-
-                    $error =
-                        "Your driver account is inactive. "
-                        . "Please contact the admin.";
-
-
-                } else {
-
-                    $error =
-                        "Your driver account cannot login currently.";
-
                 }
-
-                }
-
-
-            } else {
-
-                $error =
-                    "Incorrect phone number or password.";
-
             }
-
-
-            mysqli_stmt_close($stmt);
-
         }
-
     }
-
 }
+
+$csrf_token = csrf_token();
 
 ?>
 
-
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
@@ -234,231 +200,232 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>
-        Driver Login - Taxi Management System
-    </title>
-
+    <title>Driver Login | Taxi Management System</title>
 
     <link
         rel="stylesheet"
-        href="/css/style.css"
+        href="../css/style.css"
     >
-
 
     <style>
 
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+        }
+
         .login-container {
-
-            max-width: 450px;
-
-            margin: 50px auto;
-
-        }
-
-
-        .error-message {
-
-            color: #b91c1c;
-
-            background: #fee2e2;
-
-            border: 1px solid #fecaca;
-
-            padding: 12px;
-
-            border-radius: 6px;
-
-            margin-bottom: 20px;
-
-        }
-
-
-        .login-links {
-
-            margin-top: 20px;
-
+            min-height: 100vh;
             display: flex;
-
-            gap: 15px;
-
-            flex-wrap: wrap;
-
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
         }
 
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.08);
+        }
 
-        .login-links a {
+        .login-card h1 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            text-align: center;
+        }
 
+        .login-card p.subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: 600;
+        }
+
+        .form-group input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 7px;
+            font-size: 15px;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #333;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 13px;
+            border: none;
+            border-radius: 7px;
+            background: #222;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .login-btn:hover {
+            background: #000;
+        }
+
+        .error {
+            background: #ffe8e8;
+            color: #b00020;
+            padding: 12px;
+            border-radius: 7px;
+            margin-bottom: 18px;
+        }
+
+        .success {
+            background: #e8f8ed;
+            color: #187a35;
+            padding: 12px;
+            border-radius: 7px;
+            margin-bottom: 18px;
+        }
+
+        .hint {
+            margin-top: 18px;
+            padding: 12px;
+            background: #f1f3f5;
+            border-radius: 7px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .links {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .links a {
+            color: #222;
             text-decoration: none;
-
         }
 
-
-        .register-button {
-
-            display: inline-block;
-
-            padding: 10px 15px;
-
-            border: 1px solid #333;
-
-            border-radius: 6px;
-
+        .links a:hover {
+            text-decoration: underline;
         }
 
     </style>
 
 </head>
 
-
 <body>
 
+<div class="login-container">
 
-<!-- ================================================= -->
-<!-- HEADER -->
-<!-- ================================================= -->
+    <div class="login-card">
 
-<header>
+        <h1>Driver Login</h1>
 
-    <h1>
-        Taxi Management System
-    </h1>
-
-
-    <nav>
-
-        <a href="../index2.php">
-            Home
-        </a>
-
-
-        <a href="../admin/login.php">
-            Admin Login
-        </a>
-
-    </nav>
-
-</header>
-
-
-<!-- ================================================= -->
-<!-- DRIVER LOGIN -->
-<!-- ================================================= -->
-
-<main>
-
-    <section class="login-container">
-
-        <h2>
-            Driver Login
-        </h2>
-
-
-        <p>
-            Login to access your driver portal.
+        <p class="subtitle">
+            Login to your Taxi Management System account
         </p>
-
 
         <?php if ($error !== ""): ?>
 
-            <p class="error-message">
-
-                <?php
-                echo htmlspecialchars($error);
-                ?>
-
-            </p>
+            <div class="error">
+                <?= e($error) ?>
+            </div>
 
         <?php endif; ?>
 
+        <?php if ($success !== ""): ?>
 
-        <form
-            method="POST"
-            action=""
-        >
+            <div class="success">
+                <?= e($success) ?>
+            </div>
 
-            <?php csrf_field(); ?>
+        <?php endif; ?>
 
-            <!-- ===================================== -->
-            <!-- PHONE -->
-            <!-- ===================================== -->
+        <form method="POST" action="">
 
-            <div>
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="<?= e($csrf_token) ?>"
+            >
+
+            <div class="form-group">
 
                 <label for="phone">
                     Phone Number
                 </label>
 
-
                 <input
                     type="text"
                     id="phone"
                     name="phone"
-                    autocomplete="tel"
+                    placeholder="Enter your phone number"
+                    value="<?= e($_POST["phone"] ?? "") ?>"
                     required
+                    autocomplete="tel"
                 >
 
             </div>
 
-
-            <br>
-
-
-            <!-- ===================================== -->
-            <!-- PASSWORD -->
-            <!-- ===================================== -->
-
-            <div>
+            <div class="form-group">
 
                 <label for="password">
                     Password
                 </label>
 
-
                 <input
                     type="password"
                     id="password"
                     name="password"
-                    autocomplete="current-password"
+                    placeholder="Enter your password"
                     required
+                    autocomplete="current-password"
                 >
-
-                <p style="font-size: 0.85em; color: #666; margin-top: 4px;">
-                    First time logging in since this update?
-                    Use your driving license number as your password —
-                    it'll be upgraded to a real password automatically.
-                </p>
 
             </div>
 
-
-            <br>
-
-
-            <!-- ===================================== -->
-            <!-- LOGIN -->
-            <!-- ===================================== -->
-
-            <button type="submit">
-                Driver Login
+            <button
+                type="submit"
+                class="login-btn"
+            >
+                Login
             </button>
-
 
         </form>
 
+        <div class="hint">
 
-        <!-- ========================================= -->
-        <!-- REGISTRATION / HOME -->
-        <!-- ========================================= -->
+            <strong>First-time login:</strong><br>
 
-        <div class="login-links">
+            If your account was created before password login
+            was added, your driving license number can be used
+            as the temporary password.
 
-            <a
-                href="register.php"
-                class="register-button"
-            >
-                New Driver? Register
+            After successful login, it will automatically be
+            converted to a secure password.
+
+        </div>
+
+        <div class="links">
+
+            <a href="register.php">
+                New Driver? Register Here
             </a>
 
+            <br><br>
 
             <a href="../index2.php">
                 Back to Home
@@ -466,24 +433,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         </div>
 
+    </div>
 
-    </section>
-
-</main>
-
-
-<!-- ================================================= -->
-<!-- FOOTER -->
-<!-- ================================================= -->
-
-<footer>
-
-    <p>
-        &copy; 2026 Taxi Management System
-    </p>
-
-</footer>
-
+</div>
 
 </body>
 

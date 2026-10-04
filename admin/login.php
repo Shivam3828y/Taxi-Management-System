@@ -1,8 +1,14 @@
 <?php
 
-session_start();
+// =====================================================
+// CONFIGURATION
+// =====================================================
 
 require_once "../config.php";
+
+// Start session AFTER config.php has configured
+// the session security settings.
+session_start();
 
 $error = "";
 
@@ -16,7 +22,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     csrf_verify();
 
     $username = trim($_POST["username"] ?? "");
-    $password = trim($_POST["password"] ?? "");
+    $password = $_POST["password"] ?? "";
 
 
     // -------------------------------------------------
@@ -60,21 +66,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             mysqli_stmt_execute($stmt);
 
-            $result =
-                mysqli_stmt_get_result($stmt);
+            $result = mysqli_stmt_get_result($stmt);
 
 
             // -------------------------------------------------
             // CHECK ADMIN
             // -------------------------------------------------
 
-            if (
-                mysqli_num_rows($result) === 1
-            ) {
+            if (mysqli_num_rows($result) === 1) {
 
-                $admin =
-                    mysqli_fetch_assoc($result);
+                $admin = mysqli_fetch_assoc($result);
 
+
+                // -------------------------------------------------
+                // VERIFY PASSWORD
+                // -------------------------------------------------
 
                 if (
                     verify_password(
@@ -83,17 +89,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     )
                 ) {
 
-                    // Legacy plain-text passwords are
-                    // upgraded to a proper hash the
-                    // moment they're used successfully.
+
+                    // -------------------------------------------------
+                    // UPGRADE LEGACY PASSWORD
+                    // -------------------------------------------------
+
                     if (
                         is_legacy_plain_password(
                             $admin["password"]
                         )
                     ) {
 
-                        $new_hash =
-                            hash_password($password);
+                        $new_hash = hash_password($password);
 
                         $upgrade_stmt = mysqli_prepare(
                             $conn,
@@ -101,13 +108,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         );
 
                         if ($upgrade_stmt) {
+
                             mysqli_stmt_bind_param(
                                 $upgrade_stmt,
                                 "si",
                                 $new_hash,
                                 $admin["id"]
                             );
+
                             mysqli_stmt_execute($upgrade_stmt);
+
                             mysqli_stmt_close($upgrade_stmt);
                         }
                     }
@@ -127,7 +137,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
                     // -------------------------------------------------
-                    // GO TO ADMIN DASHBOARD
+                    // REDIRECT TO DASHBOARD
                     // -------------------------------------------------
 
                     header(
@@ -141,7 +151,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                     $error =
                         "Invalid password.";
-
                 }
 
 
@@ -149,16 +158,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $error =
                     "Admin account not found.";
-
             }
 
 
             mysqli_stmt_close($stmt);
-
         }
-
     }
-
 }
 
 ?>
@@ -275,6 +280,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         >
 
             <?php csrf_field(); ?>
+
 
             <!-- USERNAME -->
 

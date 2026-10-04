@@ -1,5 +1,7 @@
 <?php
 
+require_once "../config.php";
+
 session_start();
 
 if (!isset($_SESSION["admin_id"])) {
@@ -7,374 +9,1025 @@ if (!isset($_SESSION["admin_id"])) {
     exit;
 }
 
-require_once "../config.php";
+$filter_driver_id = (int) ($_GET["driver_id"] ?? 0);
+$filter_status = trim($_GET["status"] ?? "");
+$filter_method = trim($_GET["payment_method"] ?? "");
 
-$message = "";
-$error = "";
+$allowed_status = ["Paid", "Pending", "Failed"];
+$allowed_methods = ["UPI", "Cash", "Bank Transfer", "Card"];
 
+if (!in_array($filter_status, $allowed_status, true)) {
+    $filter_status = "";
+}
 
-// =====================================================
-// RECORD NEW PAYMENT
-// =====================================================
-
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["add_payment"])) {
-
-    csrf_verify();
-
-    $driver_id      = (int) ($_POST["driver_id"] ?? 0);
-    $assignment_id  = (int) ($_POST["assignment_id"] ?? 0);
-    $amount         = (float) ($_POST["amount"] ?? 0);
-    $payment_date   = trim($_POST["payment_date"] ?? "");
-    $payment_method = trim($_POST["payment_method"] ?? "");
-    $status         = trim($_POST["status"] ?? "Paid");
-    $notes          = trim($_POST["notes"] ?? "");
-
-    $allowed_status = ["Paid", "Pending", "Failed"];
-
-    if ($driver_id <= 0 || $assignment_id <= 0) {
-        $error = "Please select a driver / assignment.";
-    } elseif ($amount <= 0) {
-        $error = "Please enter a valid amount.";
-    } elseif ($payment_date === "") {
-        $error = "Please enter a payment date.";
-    } elseif (!in_array($status, $allowed_status, true)) {
-        $error = "Invalid payment status.";
-    } else {
-
-        $sql = "
-            INSERT INTO payments
-            (driver_id, assignment_id, amount, payment_date, payment_method, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ";
-
-        $stmt = mysqli_prepare($conn, $sql);
-
-        if (!$stmt) {
-            $error = "Database error: " . mysqli_error($conn);
-        } else {
-            mysqli_stmt_bind_param(
-                $stmt,
-                "iidsss",
-                $driver_id,
-                $assignment_id,
-                $amount,
-                $payment_date,
-                $payment_method,
-                $status,
-                $notes
-            );
-
-            if (mysqli_stmt_execute($stmt)) {
-                $message = "Payment recorded successfully.";
-            } else {
-                $error = "Failed to record payment: " . mysqli_error($conn);
-            }
-
-            mysqli_stmt_close($stmt);
-        }
-    }
+if (!in_array($filter_method, $allowed_methods, true)) {
+    $filter_method = "";
 }
 
 
-// =====================================================
-// UPDATE PAYMENT STATUS (mark pending/failed as paid, etc.)
-// =====================================================
+/* =====================================================
+   SUMMARY
+===================================================== */
 
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_status"])) {
-
-    csrf_verify();
-
-    $payment_id = (int) ($_POST["payment_id"] ?? 0);
-    $new_status = trim($_POST["new_status"] ?? "");
-
-    $allowed_status = ["Paid", "Pending", "Failed"];
-
-    if ($payment_id > 0 && in_array($new_status, $allowed_status, true)) {
-
-        $sql = "UPDATE payments SET status = ? WHERE id = ?";
-        $stmt = mysqli_prepare($conn, $sql);
-
-        if ($stmt) {
-            mysqli_stmt_bind_param($stmt, "si", $new_status, $payment_id);
-            mysqli_stmt_execute($stmt);
-            mysqli_stmt_close($stmt);
-            $message = "Payment status updated.";
-        }
-    }
-}
-
-
-// =====================================================
-// ACTIVE ASSIGNMENTS (for the "record payment" dropdown)
-// =====================================================
-
-$assignments = [];
-
-$sql = "
-    SELECT
-        assignments.id AS assignment_id,
-        assignments.driver_id,
-        drivers.name AS driver_name,
-        taxis.brand,
-        taxis.model,
-        taxis.registration_number
-    FROM assignments
-    INNER JOIN drivers ON assignments.driver_id = drivers.id
-    INNER JOIN taxis ON assignments.taxi_id = taxis.id
-    WHERE assignments.status = 'Active'
-    ORDER BY drivers.name
-";
-
-$result = mysqli_query($conn, $sql);
-
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $assignments[] = $row;
-    }
-}
-
-
-// =====================================================
-// SUMMARY TOTALS
-// =====================================================
+$summary = [
+    "total_collected" => 0,
+    "total_pending" => 0,
+    "total_failed" => 0,
+    "total_count" => 0,
+    "paid_count" => 0,
+    "pending_count" => 0
+];
 
 $summary_sql = "
     SELECT
-        COALESCE(SUM(CASE WHEN status = 'Paid' THEN amount ELSE 0 END), 0) AS total_collected,
-        COALESCE(SUM(CASE WHEN status = 'Pending' THEN amount ELSE 0 END), 0) AS total_pending,
-        COUNT(*) AS total_count
+        COALESCE(
+            SUM(
+                CASE
+                    WHEN status = 'Paid' THEN amount
+                    ELSE 0
+                END
+            ),
+            0
+        ) AS total_collected,
+
+        COALESCE(
+            SUM(
+                CASE
+                    WHEN status = 'Pending' THEN amount
+                    ELSE 0
+                END
+            ),
+            0
+        ) AS total_pending,
+
+        COALESCE(
+            SUM(
+                CASE
+                    WHEN status = 'Failed' THEN amount
+                    ELSE 0
+                END
+            ),
+            0
+        ) AS total_failed,
+
+        COUNT(*) AS total_count,
+
+        SUM(
+            CASE
+                WHEN status = 'Paid' THEN 1
+                ELSE 0
+            END
+        ) AS paid_count,
+
+        SUM(
+            CASE
+                WHEN status = 'Pending' THEN 1
+                ELSE 0
+            END
+        ) AS pending_count
+
     FROM payments
 ";
 
-$summary = mysqli_fetch_assoc(mysqli_query($conn, $summary_sql));
+$summary_result = mysqli_query($conn, $summary_sql);
+
+if ($summary_result) {
+    $row = mysqli_fetch_assoc($summary_result);
+
+    if ($row) {
+        $summary = array_merge($summary, $row);
+    }
+}
 
 
-// =====================================================
-// PAYMENT HISTORY (all drivers)
-// =====================================================
+/* =====================================================
+   DRIVER LIST
+===================================================== */
+
+$drivers = [];
+
+$driver_result = mysqli_query(
+    $conn,
+    "
+        SELECT id, name
+        FROM drivers
+        ORDER BY name ASC
+    "
+);
+
+if ($driver_result) {
+    while ($row = mysqli_fetch_assoc($driver_result)) {
+        $drivers[] = $row;
+    }
+}
+
+
+/* =====================================================
+   PAYMENT HISTORY
+===================================================== */
 
 $payments = [];
 
 $sql = "
     SELECT
         payments.id,
+        payments.driver_id,
+        payments.assignment_id,
         payments.amount,
         payments.payment_date,
         payments.payment_method,
         payments.status,
         payments.notes,
-        drivers.id AS driver_id,
+
         drivers.name AS driver_name,
+        drivers.phone AS driver_phone,
+
         taxis.brand,
         taxis.model,
         taxis.registration_number
+
     FROM payments
-    INNER JOIN drivers ON payments.driver_id = drivers.id
-    INNER JOIN assignments ON payments.assignment_id = assignments.id
-    INNER JOIN taxis ON assignments.taxi_id = taxis.id
-    ORDER BY payments.payment_date DESC, payments.id DESC
+
+    INNER JOIN drivers
+        ON payments.driver_id = drivers.id
+
+    LEFT JOIN assignments
+        ON payments.assignment_id = assignments.id
+
+    LEFT JOIN taxis
+        ON assignments.taxi_id = taxis.id
+
+    WHERE 1 = 1
 ";
 
-$result = mysqli_query($conn, $sql);
+$types = "";
+$params = [];
 
-if ($result) {
+if ($filter_driver_id > 0) {
+    $sql .= " AND payments.driver_id = ?";
+    $types .= "i";
+    $params[] = $filter_driver_id;
+}
+
+if ($filter_status !== "") {
+    $sql .= " AND payments.status = ?";
+    $types .= "s";
+    $params[] = $filter_status;
+}
+
+if ($filter_method !== "") {
+    $sql .= " AND payments.payment_method = ?";
+    $types .= "s";
+    $params[] = $filter_method;
+}
+
+$sql .= "
+    ORDER BY
+        payments.payment_date DESC,
+        payments.id DESC
+";
+
+$stmt = mysqli_prepare($conn, $sql);
+
+if ($stmt) {
+
+    if ($types !== "") {
+        mysqli_stmt_bind_param(
+            $stmt,
+            $types,
+            ...$params
+        );
+    }
+
+    mysqli_stmt_execute($stmt);
+
+    $result = mysqli_stmt_get_result($stmt);
+
     while ($row = mysqli_fetch_assoc($result)) {
         $payments[] = $row;
     }
+
+    mysqli_stmt_close($stmt);
 }
 
 ?>
 
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payments - Taxi Management System</title>
 
-    <link rel="stylesheet" href="../css/style.css">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Payment Management - Taxi Management System
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="../css/style.css"
+    >
+
+    <style>
+
+        .payments-container {
+            max-width: 1250px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .page-intro {
+            margin-bottom: 25px;
+        }
+
+        .page-intro p {
+            color: #555;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(190px, 1fr)
+                );
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+
+        .summary-card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 18px;
+        }
+
+        .summary-card .label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .summary-card .value {
+            margin-top: 7px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .filters {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(200px, 1fr)
+                );
+            gap: 15px;
+            align-items: end;
+        }
+
+        .filter-grid label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .filter-grid select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-actions button,
+        .filter-actions a {
+            padding: 10px 14px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .payment-table-wrapper {
+            overflow-x: auto;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1050px;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f5f5f5;
+        }
+
+        .amount {
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 9px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .badge-Paid {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-Pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-Failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .payment-note {
+            color: #666;
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 35px;
+            color: #666;
+        }
+
+        .admin-note {
+            background: #f8fafc;
+            border-left: 4px solid #555;
+            padding: 14px 16px;
+            margin-bottom: 25px;
+        }
+
+        @media (max-width: 700px) {
+
+            .payments-container {
+                padding: 0 12px;
+            }
+
+        }
+
+    </style>
 
 </head>
 
+
 <body>
+
 
 <header>
 
-    <h1>Payment Management</h1>
+    <h1>
+        Payment Management
+    </h1>
 
     <nav>
-        <a href="dashboard.php">Dashboard</a>
-        <a href="drivers.php">Drivers</a>
-        <a href="taxis.php">Taxis</a>
-        <a href="assignments.php">Assignments</a>
-        <a href="agreements.php">Agreements</a>
-        <a href="payments.php">Payments</a>
-        <a href="../index2.php">Public Portal</a>
-        <a href="logout.php">Logout</a>
+
+        <a href="dashboard.php">
+            Dashboard
+        </a>
+
+        <a href="drivers.php">
+            Drivers
+        </a>
+
+        <a href="taxis.php">
+            Taxis
+        </a>
+
+        <a href="assignments.php">
+            Assignments
+        </a>
+
+        <a href="agreements.php">
+            Agreements
+        </a>
+
+        <a href="payments.php">
+            Payments
+        </a>
+
+        <a href="../index2.php">
+            Public Portal
+        </a>
+
+        <a href="logout.php">
+            Logout
+        </a>
+
     </nav>
 
 </header>
 
-<main>
 
-    <?php if ($message !== ""): ?>
-        <p class="message"><?= e($message) ?></p>
-    <?php endif; ?>
+<main class="payments-container">
 
-    <?php if ($error !== ""): ?>
-        <p class="error"><?= e($error) ?></p>
-    <?php endif; ?>
 
-    <div class="summary-grid">
-        <div class="summary-card">
-            <div>Total Collected</div>
-            <div class="value">₹<?= number_format((float) $summary["total_collected"], 2) ?></div>
-        </div>
-        <div class="summary-card">
-            <div>Pending</div>
-            <div class="value">₹<?= number_format((float) $summary["total_pending"], 2) ?></div>
-        </div>
-        <div class="summary-card">
-            <div>Total Payments</div>
-            <div class="value"><?= (int) $summary["total_count"] ?></div>
-        </div>
+    <div class="page-intro">
+
+        <h2>
+            Rent Payment Records
+        </h2>
+
+        <p>
+            View payment activity for all drivers,
+            assigned taxis and rental agreements.
+        </p>
+
     </div>
 
-    <section class="form-card">
 
-        <h2>Record a Payment</h2>
+    <div class="admin-note">
 
-        <form method="POST" action="">
+        <strong>
+            Automatic Payment Records
+        </strong>
 
-            <?php csrf_field(); ?>
+        <div>
 
-            <div class="form-row">
+            Payment status shown here is read from the
+            <code>payments</code> table.
+
+            When the UPI payment gateway and webhook are
+            connected, successful payments will appear
+            here automatically.
+
+            Admin does not need to manually mark a
+            successful online payment as Paid.
+
+        </div>
+
+    </div>
+
+
+    <!-- =================================================
+         SUMMARY
+    ================================================= -->
+
+    <section class="summary-grid">
+
+
+        <div class="summary-card">
+
+            <div class="label">
+                Total Collected
+            </div>
+
+            <div class="value">
+
+                ₹<?= number_format(
+                    (float) $summary["total_collected"],
+                    2
+                ) ?>
+
+            </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+            <div class="label">
+                Pending Amount
+            </div>
+
+            <div class="value">
+
+                ₹<?= number_format(
+                    (float) $summary["total_pending"],
+                    2
+                ) ?>
+
+            </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+            <div class="label">
+                Failed Amount
+            </div>
+
+            <div class="value">
+
+                ₹<?= number_format(
+                    (float) $summary["total_failed"],
+                    2
+                ) ?>
+
+            </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+            <div class="label">
+                Completed Payments
+            </div>
+
+            <div class="value">
+
+                <?= (int) $summary["paid_count"] ?>
+
+            </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+            <div class="label">
+                Pending Payments
+            </div>
+
+            <div class="value">
+
+                <?= (int) $summary["pending_count"] ?>
+
+            </div>
+
+        </div>
+
+
+    </section>
+
+
+    <!-- =================================================
+         FILTERS
+    ================================================= -->
+
+    <section class="filters">
+
+        <h3>
+            Payment Filters
+        </h3>
+
+
+        <form
+            method="GET"
+            action="payments.php"
+        >
+
+            <div class="filter-grid">
+
 
                 <div>
-                    <label for="assignment_id">Driver / Taxi</label>
-                    <select id="assignment_id" name="assignment_id" required
-                        onchange="document.getElementById('driver_id').value = this.options[this.selectedIndex].getAttribute('data-driver')">
-                        <option value="">-- Select active assignment --</option>
-                        <?php foreach ($assignments as $a): ?>
+
+                    <label for="driver_id">
+                        Driver
+                    </label>
+
+                    <select
+                        id="driver_id"
+                        name="driver_id"
+                    >
+
+                        <option value="">
+                            All Drivers
+                        </option>
+
+
+                        <?php foreach ($drivers as $driver): ?>
+
                             <option
-                                value="<?= (int) $a['assignment_id'] ?>"
-                                data-driver="<?= (int) $a['driver_id'] ?>"
+                                value="<?= (int) $driver["id"] ?>"
+                                <?= $filter_driver_id === (int) $driver["id"]
+                                    ? "selected"
+                                    : "" ?>
                             >
-                                <?= e($a['driver_name']) ?> — <?= e($a['brand'] . ' ' . $a['model'] . ' (' . $a['registration_number'] . ')') ?>
+
+                                #<?= (int) $driver["id"] ?>
+                                -
+                                <?= e($driver["name"]) ?>
+
                             </option>
+
                         <?php endforeach; ?>
+
+
                     </select>
+
                 </div>
 
-                <input type="hidden" id="driver_id" name="driver_id" value="">
-
-                <div>
-                    <label for="amount">Amount (₹)</label>
-                    <input type="number" step="0.01" min="0.01" id="amount" name="amount" required>
-                </div>
 
                 <div>
-                    <label for="payment_date">Payment Date</label>
-                    <input type="date" id="payment_date" name="payment_date" required>
+
+                    <label for="status">
+                        Status
+                    </label>
+
+                    <select
+                        id="status"
+                        name="status"
+                    >
+
+                        <option value="">
+                            All Status
+                        </option>
+
+
+                        <?php foreach ($allowed_status as $status): ?>
+
+                            <option
+                                value="<?= e($status) ?>"
+                                <?= $filter_status === $status
+                                    ? "selected"
+                                    : "" ?>
+                            >
+
+                                <?= e($status) ?>
+
+                            </option>
+
+                        <?php endforeach; ?>
+
+
+                    </select>
+
                 </div>
+
+
+                <div>
+
+                    <label for="payment_method">
+                        Payment Method
+                    </label>
+
+                    <select
+                        id="payment_method"
+                        name="payment_method"
+                    >
+
+                        <option value="">
+                            All Methods
+                        </option>
+
+
+                        <?php foreach ($allowed_methods as $method): ?>
+
+                            <option
+                                value="<?= e($method) ?>"
+                                <?= $filter_method === $method
+                                    ? "selected"
+                                    : "" ?>
+                            >
+
+                                <?= e($method) ?>
+
+                            </option>
+
+                        <?php endforeach; ?>
+
+
+                    </select>
+
+                </div>
+
+
+                <div class="filter-actions">
+
+                    <button type="submit">
+                        Apply
+                    </button>
+
+                    <a href="payments.php">
+                        Reset
+                    </a>
+
+                </div>
+
 
             </div>
-
-            <div class="form-row">
-
-                <div>
-                    <label for="payment_method">Payment Method</label>
-                    <select id="payment_method" name="payment_method">
-                        <option value="Cash">Cash</option>
-                        <option value="UPI">UPI</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="Card">Card</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label for="status">Status</label>
-                    <select id="status" name="status">
-                        <option value="Paid">Paid</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Failed">Failed</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label for="notes">Notes</label>
-                    <input type="text" id="notes" name="notes" maxlength="255">
-                </div>
-
-            </div>
-
-            <button type="submit" name="add_payment">Record Payment</button>
 
         </form>
 
     </section>
 
+
+    <!-- =================================================
+         PAYMENT HISTORY
+    ================================================= -->
+
     <section>
 
-        <h2>Payment History</h2>
+        <h2>
+            Payment History
+        </h2>
+
 
         <?php if (empty($payments)): ?>
 
-            <p>No payments recorded yet.</p>
+
+            <div class="payment-table-wrapper">
+
+                <div class="empty-state">
+
+                    <h3>
+                        No Payment Records Found
+                    </h3>
+
+                    <p>
+                        Payment records will appear here
+                        when a driver makes a payment.
+                    </p>
+
+                </div>
+
+            </div>
+
 
         <?php else: ?>
 
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Driver</th>
-                        <th>Taxi</th>
-                        <th>Amount</th>
-                        <th>Method</th>
-                        <th>Status</th>
-                        <th>Notes</th>
-                        <th>Change Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($payments as $p): ?>
+
+            <div class="payment-table-wrapper">
+
+
+                <table>
+
+
+                    <thead>
+
                         <tr>
-                            <td><?= e($p['payment_date']) ?></td>
-                            <td><?= e($p['driver_name']) ?></td>
-                            <td><?= e($p['brand'] . ' ' . $p['model'] . ' (' . $p['registration_number'] . ')') ?></td>
-                            <td>₹<?= number_format((float) $p['amount'], 2) ?></td>
-                            <td><?= e($p['payment_method'] ?? '—') ?></td>
-                            <td><span class="badge badge-<?= e($p['status']) ?>"><?= e($p['status']) ?></span></td>
-                            <td><?= e($p['notes'] ?? '') ?></td>
-                            <td>
-                                <form method="POST" action="" style="display:flex; gap:5px;">
-                                    <?php csrf_field(); ?>
-                                    <input type="hidden" name="payment_id" value="<?= (int) $p['id'] ?>">
-                                    <select name="new_status">
-                                        <option value="Paid" <?= $p['status'] === 'Paid' ? 'selected' : '' ?>>Paid</option>
-                                        <option value="Pending" <?= $p['status'] === 'Pending' ? 'selected' : '' ?>>Pending</option>
-                                        <option value="Failed" <?= $p['status'] === 'Failed' ? 'selected' : '' ?>>Failed</option>
-                                    </select>
-                                    <button type="submit" name="update_status">Update</button>
-                                </form>
-                            </td>
+
+                            <th>
+                                Payment ID
+                            </th>
+
+                            <th>
+                                Driver
+                            </th>
+
+                            <th>
+                                Driver ID
+                            </th>
+
+                            <th>
+                                Taxi
+                            </th>
+
+                            <th>
+                                Assignment ID
+                            </th>
+
+                            <th>
+                                Amount
+                            </th>
+
+                            <th>
+                                Payment Date
+                            </th>
+
+                            <th>
+                                Method
+                            </th>
+
+                            <th>
+                                Status
+                            </th>
+
+                            <th>
+                                Details
+                            </th>
+
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+
+                    </thead>
+
+
+                    <tbody>
+
+
+                        <?php foreach ($payments as $payment): ?>
+
+
+                            <tr>
+
+
+                                <td>
+
+                                    #<?= (int) $payment["id"] ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?= e(
+                                        $payment["driver_name"]
+                                    ) ?>
+
+
+                                    <div class="payment-note">
+
+                                        <?= e(
+                                            $payment["driver_phone"]
+                                        ) ?>
+
+                                    </div>
+
+                                </td>
+
+
+                                <td>
+
+                                    #<?= (int) $payment["driver_id"] ?>
+
+                                </td>
+
+
+                                <td>
+
+
+                                    <?php if (
+                                        !empty(
+                                            $payment[
+                                                "registration_number"
+                                            ]
+                                        )
+                                    ): ?>
+
+
+                                        <?= e(
+                                            $payment["brand"]
+                                            . " "
+                                            . $payment["model"]
+                                        ) ?>
+
+
+                                        <div class="payment-note">
+
+                                            <?= e(
+                                                $payment[
+                                                    "registration_number"
+                                                ]
+                                            ) ?>
+
+                                        </div>
+
+
+                                    <?php else: ?>
+
+                                        —
+
+                                    <?php endif; ?>
+
+
+                                </td>
+
+
+                                <td>
+
+                                    #<?= (int) $payment["assignment_id"] ?>
+
+                                </td>
+
+
+                                <td class="amount">
+
+                                    ₹<?= number_format(
+                                        (float) $payment["amount"],
+                                        2
+                                    ) ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?= e(
+                                        $payment["payment_date"]
+                                    ) ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?= e(
+                                        $payment[
+                                            "payment_method"
+                                        ] ?? "—"
+                                    ) ?>
+
+                                </td>
+
+
+                                <td>
+
+
+                                    <span
+                                        class="badge badge-<?= e(
+                                            $payment["status"]
+                                        ) ?>"
+                                    >
+
+                                        <?= e(
+                                            $payment["status"]
+                                        ) ?>
+
+                                    </span>
+
+
+                                </td>
+
+
+                                <td>
+
+
+                                    <?php if (
+                                        !empty(
+                                            $payment["notes"]
+                                        )
+                                    ): ?>
+
+
+                                        <?= e(
+                                            $payment["notes"]
+                                        ) ?>
+
+
+                                    <?php else: ?>
+
+                                        —
+
+                                    <?php endif; ?>
+
+
+                                </td>
+
+
+                            </tr>
+
+
+                        <?php endforeach; ?>
+
+
+                    </tbody>
+
+
+                </table>
+
+
+            </div>
+
 
         <?php endif; ?>
 
+
     </section>
+
 
 </main>
 
+
 <footer>
-    <p>&copy; 2026 Taxi Management System</p>
+
+    <p>
+        &copy; 2026 Taxi Management System
+    </p>
+
 </footer>
 
+
 </body>
+
 </html>

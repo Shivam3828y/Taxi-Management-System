@@ -1,5 +1,7 @@
 <?php
 
+require_once "../config.php";
+
 session_start();
 
 if (!isset($_SESSION["admin_id"])) {
@@ -78,11 +80,6 @@ if (!isset($_SESSION["admin_id"])) {
 
         .workflow li {
             margin-bottom: 10px;
-        }
-
-        .coming-soon {
-            color: #777;
-            font-style: italic;
         }
 
         @media (max-width: 900px) {
@@ -176,9 +173,13 @@ if (!isset($_SESSION["admin_id"])) {
 
             Welcome,
             <?php
+
             echo htmlspecialchars(
-                $_SESSION["admin_name"]
+                $_SESSION["admin_name"],
+                ENT_QUOTES,
+                "UTF-8"
             );
+
             ?>
 
         </h2>
@@ -186,8 +187,8 @@ if (!isset($_SESSION["admin_id"])) {
 
         <p>
             Manage drivers, taxis, assignments,
-            agreements and other taxi operations
-            from the admin panel.
+            agreements and payments from the
+            admin panel.
         </p>
 
     </section>
@@ -237,7 +238,7 @@ if (!isset($_SESSION["admin_id"])) {
 
                 <p>
                     Add taxis and manage their
-                    status and fixed rent.
+                    status and rent.
                 </p>
 
                 <a href="taxis.php">
@@ -287,46 +288,6 @@ if (!isset($_SESSION["admin_id"])) {
             </div>
 
 
-            <!-- MAINTENANCE -->
-
-            <div class="dashboard-card">
-
-                <h3>
-                    Maintenance
-                </h3>
-
-                <p>
-                    Track taxi servicing,
-                    repairs and maintenance.
-                </p>
-
-                <p class="coming-soon">
-                    Coming soon
-                </p>
-
-            </div>
-
-
-            <!-- FINES -->
-
-            <div class="dashboard-card">
-
-                <h3>
-                    Fines
-                </h3>
-
-                <p>
-                    Record traffic fines and
-                    assign responsibility.
-                </p>
-
-                <p class="coming-soon">
-                    Coming soon
-                </p>
-
-            </div>
-
-
             <!-- PAYMENTS -->
 
             <div class="dashboard-card">
@@ -340,9 +301,9 @@ if (!isset($_SESSION["admin_id"])) {
                     payment records.
                 </p>
 
-                <p class="coming-soon">
-                    Coming soon
-                </p>
+                <a href="payments.php">
+                    Manage Payments
+                </a>
 
             </div>
 
@@ -352,7 +313,9 @@ if (!isset($_SESSION["admin_id"])) {
     </section>
 
 
-   
+</main>
+
+
 <footer>
 
     <p>
