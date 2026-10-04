@@ -1,23 +1,24 @@
 <?php
 
-session_start();
+require_once "../config.php";
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 if (!isset($_SESSION["driver_id"])) {
     header("Location: login.php");
     exit;
 }
 
-require_once "../config.php";
-
 $driver_id = (int) $_SESSION["driver_id"];
 
 $message = "";
 $error = "";
 
-
-// =====================================================
-// ACCEPT AGREEMENT
-// =====================================================
+/* =====================================================
+   ACCEPT AGREEMENT
+   ===================================================== */
 
 if (
     $_SERVER["REQUEST_METHOD"] === "POST"
@@ -46,10 +47,7 @@ if (
             )
         ";
 
-        $accept_stmt = mysqli_prepare(
-            $conn,
-            $accept_sql
-        );
+        $accept_stmt = mysqli_prepare($conn, $accept_sql);
 
         if ($accept_stmt) {
 
@@ -60,43 +58,27 @@ if (
                 $driver_id
             );
 
-            mysqli_stmt_execute(
-                $accept_stmt
-            );
+            mysqli_stmt_execute($accept_stmt);
 
-            if (
-                mysqli_stmt_affected_rows(
-                    $accept_stmt
-                ) > 0
-            ) {
-
-                $message =
-                    "Agreement accepted successfully.";
-
+            if (mysqli_stmt_affected_rows($accept_stmt) > 0) {
+                $message = "Agreement accepted successfully.";
             } else {
-
-                $error =
-                    "Agreement could not be accepted.";
-
+                $error = "Agreement could not be accepted.";
             }
 
-            mysqli_stmt_close(
-                $accept_stmt
-            );
+            mysqli_stmt_close($accept_stmt);
 
         } else {
 
-            $error =
-                "Database error: "
-                . mysqli_error($conn);
+            $error = "Database error: " . mysqli_error($conn);
         }
     }
 }
 
 
-// =====================================================
-// DRIVER INFORMATION
-// =====================================================
+/* =====================================================
+   DRIVER INFORMATION
+   ===================================================== */
 
 $driver_sql = "
     SELECT
@@ -112,10 +94,11 @@ $driver_sql = "
     LIMIT 1
 ";
 
-$driver_stmt = mysqli_prepare(
-    $conn,
-    $driver_sql
-);
+$driver_stmt = mysqli_prepare($conn, $driver_sql);
+
+if (!$driver_stmt) {
+    die("Database error: " . mysqli_error($conn));
+}
 
 mysqli_stmt_bind_param(
     $driver_stmt,
@@ -123,37 +106,27 @@ mysqli_stmt_bind_param(
     $driver_id
 );
 
-mysqli_stmt_execute(
-    $driver_stmt
-);
+mysqli_stmt_execute($driver_stmt);
 
-$driver_result =
-    mysqli_stmt_get_result(
-        $driver_stmt
-    );
+$driver_result = mysqli_stmt_get_result($driver_stmt);
 
-$driver = mysqli_fetch_assoc(
-    $driver_result
-);
+$driver = mysqli_fetch_assoc($driver_result);
 
-mysqli_stmt_close(
-    $driver_stmt
-);
-
+mysqli_stmt_close($driver_stmt);
 
 if (!$driver) {
 
+    $_SESSION = [];
     session_destroy();
 
     header("Location: login.php");
-
     exit;
 }
 
 
-// =====================================================
-// ACTIVE ASSIGNMENT
-// =====================================================
+/* =====================================================
+   ACTIVE ASSIGNMENT
+   ===================================================== */
 
 $assignment_sql = "
     SELECT
@@ -181,10 +154,11 @@ $assignment_sql = "
     LIMIT 1
 ";
 
-$assignment_stmt = mysqli_prepare(
-    $conn,
-    $assignment_sql
-);
+$assignment_stmt = mysqli_prepare($conn, $assignment_sql);
+
+if (!$assignment_stmt) {
+    die("Database error: " . mysqli_error($conn));
+}
 
 mysqli_stmt_bind_param(
     $assignment_stmt,
@@ -192,28 +166,18 @@ mysqli_stmt_bind_param(
     $driver_id
 );
 
-mysqli_stmt_execute(
-    $assignment_stmt
-);
+mysqli_stmt_execute($assignment_stmt);
 
-$assignment_result =
-    mysqli_stmt_get_result(
-        $assignment_stmt
-    );
+$assignment_result = mysqli_stmt_get_result($assignment_stmt);
 
-$assignment =
-    mysqli_fetch_assoc(
-        $assignment_result
-    );
+$assignment = mysqli_fetch_assoc($assignment_result);
 
-mysqli_stmt_close(
-    $assignment_stmt
-);
+mysqli_stmt_close($assignment_stmt);
 
 
-// =====================================================
-// ACTIVE AGREEMENT
-// =====================================================
+/* =====================================================
+   ACTIVE AGREEMENT
+   ===================================================== */
 
 $agreement = null;
 
@@ -235,34 +199,133 @@ if ($assignment) {
         LIMIT 1
     ";
 
-    $agreement_stmt = mysqli_prepare(
-        $conn,
-        $agreement_sql
-    );
+    $agreement_stmt = mysqli_prepare($conn, $agreement_sql);
 
-    mysqli_stmt_bind_param(
-        $agreement_stmt,
-        "i",
-        $assignment["assignment_id"]
-    );
+    if ($agreement_stmt) {
 
-    mysqli_stmt_execute(
-        $agreement_stmt
-    );
-
-    $agreement_result =
-        mysqli_stmt_get_result(
-            $agreement_stmt
+        mysqli_stmt_bind_param(
+            $agreement_stmt,
+            "i",
+            $assignment["assignment_id"]
         );
 
-    $agreement =
-        mysqli_fetch_assoc(
-            $agreement_result
+        mysqli_stmt_execute($agreement_stmt);
+
+        $agreement_result =
+            mysqli_stmt_get_result($agreement_stmt);
+
+        $agreement =
+            mysqli_fetch_assoc($agreement_result);
+
+        mysqli_stmt_close($agreement_stmt);
+    }
+}
+
+
+/* =====================================================
+   PAYMENT INFORMATION
+   ===================================================== */
+
+$payment = null;
+$payment_amount = 0;
+
+if ($assignment) {
+
+    if ($agreement) {
+        $payment_amount = (float) $agreement["rent"];
+    } else {
+        $payment_amount = (float) $assignment["rent"];
+    }
+
+    $payment_sql = "
+        SELECT
+            id,
+            amount,
+            payment_date,
+            payment_method,
+            status,
+            notes
+        FROM payments
+        WHERE driver_id = ?
+        AND assignment_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+    ";
+
+    $payment_stmt = mysqli_prepare($conn, $payment_sql);
+
+    if ($payment_stmt) {
+
+        mysqli_stmt_bind_param(
+            $payment_stmt,
+            "ii",
+            $driver_id,
+            $assignment["assignment_id"]
         );
 
-    mysqli_stmt_close(
-        $agreement_stmt
-    );
+        mysqli_stmt_execute($payment_stmt);
+
+        $payment_result =
+            mysqli_stmt_get_result($payment_stmt);
+
+        $payment =
+            mysqli_fetch_assoc($payment_result);
+
+        mysqli_stmt_close($payment_stmt);
+    }
+}
+
+
+/* =====================================================
+   UPI QR
+   ===================================================== */
+
+$upi_id = "YOUR_UPI_ID@upi";
+$upi_name = "Taxi Management System";
+
+$upi_note =
+    "Taxi Rent - Driver ID " . $driver_id;
+
+$upi_uri =
+    "upi://pay?pa="
+    . rawurlencode($upi_id)
+    . "&pn="
+    . rawurlencode($upi_name)
+    . "&am="
+    . rawurlencode(
+        number_format(
+            $payment_amount,
+            2,
+            ".",
+            ""
+        )
+    )
+    . "&cu=INR"
+    . "&tn="
+    . rawurlencode($upi_note);
+
+$qr_url =
+    "https://api.qrserver.com/v1/create-qr-code/"
+    . "?size=240x240&data="
+    . rawurlencode($upi_uri);
+
+
+/* =====================================================
+   PAYMENT STATUS
+   ===================================================== */
+
+$payment_status = "Pending";
+
+if ($payment) {
+    $payment_status = $payment["status"];
+}
+
+$payment_status_class = "pending";
+
+if ($payment_status === "Paid") {
+    $payment_status_class = "paid";
+} elseif ($payment_status === "Failed") {
+    $payment_status_class = "failed";
 }
 
 ?>
@@ -294,69 +357,55 @@ if ($assignment) {
         .dashboard-container {
             max-width: 1200px;
             margin: 30px auto;
+            padding: 0 15px;
         }
 
         .dashboard-grid {
-
             display: grid;
-
             grid-template-columns:
                 repeat(
                     auto-fit,
                     minmax(250px, 1fr)
                 );
-
             gap: 20px;
-
             margin-top: 20px;
         }
 
         .dashboard-card {
-
             border: 1px solid #ddd;
-
             border-radius: 10px;
-
             padding: 20px;
-
             background: #fff;
+        }
 
+        .dashboard-card h2 {
+            margin-top: 0;
         }
 
         .pass-card {
-
             border: 2px solid #222;
-
             border-radius: 12px;
-
             padding: 25px;
-
             background: #f8f8f8;
-
+            margin-top: 20px;
         }
 
         .pass-title {
-
             font-size: 24px;
-
             font-weight: bold;
-
             margin-bottom: 20px;
-
         }
 
         .pass-row {
-
             display: flex;
-
             justify-content: space-between;
-
             gap: 20px;
-
             padding: 10px 0;
-
             border-bottom: 1px solid #ddd;
+        }
 
+        .pass-row:last-child {
+            border-bottom: none;
         }
 
         .status {
@@ -385,101 +434,202 @@ if ($assignment) {
             font-weight: bold;
         }
 
+        .paid {
+            color: #15803d;
+            font-weight: bold;
+        }
+
+        .failed {
+            color: #b91c1c;
+            font-weight: bold;
+        }
+
         .error-message {
             color: #b91c1c;
             margin-bottom: 15px;
+            padding: 10px;
+            background: #fee2e2;
+            border-radius: 6px;
         }
 
         .success-message {
             color: #15803d;
             margin-bottom: 15px;
+            padding: 10px;
+            background: #dcfce7;
+            border-radius: 6px;
         }
 
         .dashboard-button {
-
             display: inline-block;
-
             margin-top: 10px;
-
             padding: 10px 15px;
-
             border: 1px solid #333;
-
             border-radius: 6px;
-
             text-decoration: none;
-
             cursor: pointer;
-
             background: #fff;
+            color: #222;
+        }
 
+        .dashboard-button:hover {
+            background: #f1f1f1;
         }
 
         .accept-button {
-
             background: #15803d;
-
             color: white;
-
             border: none;
-
             padding: 11px 18px;
-
             border-radius: 6px;
-
             cursor: pointer;
-
             margin-top: 15px;
+        }
 
+        .accept-button:hover {
+            background: #166534;
         }
 
         .agreement-box {
-
             border: 2px solid #444;
-
             border-radius: 10px;
-
             padding: 20px;
-
             background: #fafafa;
-
+            margin-top: 20px;
         }
 
         .agreement-warning {
-
             padding: 12px;
-
             background: #fff3cd;
-
             border-radius: 6px;
-
             margin-top: 15px;
-
         }
 
-        @media (max-width: 600px) {
+        .payment-card {
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            padding: 25px;
+            background: #fff;
+            margin-top: 20px;
+        }
 
-            .pass-row {
+        .payment-layout {
+            display: grid;
+            grid-template-columns:
+                minmax(250px, 1fr)
+                280px;
+            gap: 30px;
+            align-items: center;
+        }
 
+        .payment-info {
+            width: 100%;
+        }
+
+        .payment-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .payment-row:last-child {
+            border-bottom: none;
+        }
+
+        .qr-box {
+            text-align: center;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background: #fafafa;
+        }
+
+        .qr-box img {
+            width: 220px;
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            padding: 8px;
+            background: white;
+        }
+
+        .qr-title {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .qr-amount {
+            font-size: 22px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .payment-note {
+            margin-top: 15px;
+            padding: 12px;
+            background: #fff7ed;
+            border-radius: 7px;
+            color: #7c2d12;
+            font-size: 14px;
+        }
+
+        .service-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(220px, 1fr)
+                );
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .service-card {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background: white;
+        }
+
+        .service-card h3 {
+            margin-top: 0;
+        }
+
+        .empty-box {
+            border: 1px dashed #aaa;
+            border-radius: 10px;
+            padding: 25px;
+            text-align: center;
+            background: #fafafa;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 700px) {
+
+            .pass-row,
+            .payment-row {
                 flex-direction: column;
-
                 gap: 5px;
-
             }
 
+            .payment-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .qr-box {
+                max-width: 300px;
+                margin: 0 auto;
+            }
         }
 
     </style>
 
 </head>
 
-
 <body>
-
-
-<!-- ================================================= -->
-<!-- HEADER -->
-<!-- ================================================= -->
 
 <header>
 
@@ -506,600 +656,734 @@ if ($assignment) {
 </header>
 
 
-<!-- ================================================= -->
-<!-- MAIN -->
-<!-- ================================================= -->
-
 <main class="dashboard-container">
 
+    <h1>
+        Driver Dashboard
+    </h1>
 
-    <!-- ================================================= -->
-    <!-- MESSAGES -->
-    <!-- ================================================= -->
 
-    <?php if ($message !== ""): ?>
+    <?php if ($message): ?>
 
-        <p class="success-message">
-
-            <?php
-            echo htmlspecialchars($message);
-            ?>
-
-        </p>
+        <div class="success-message">
+            <?= e($message) ?>
+        </div>
 
     <?php endif; ?>
 
 
-    <?php if ($error !== ""): ?>
+    <?php if ($error): ?>
 
-        <p class="error-message">
-
-            <?php
-            echo htmlspecialchars($error);
-            ?>
-
-        </p>
+        <div class="error-message">
+            <?= e($error) ?>
+        </div>
 
     <?php endif; ?>
 
 
-    <!-- ================================================= -->
-    <!-- WELCOME -->
-    <!-- ================================================= -->
+    <!-- =================================================
+         DRIVER PROFILE
+         ================================================= -->
 
-    <section>
+    <div class="dashboard-card">
 
         <h2>
-
-            Welcome,
-            <?php
-            echo htmlspecialchars(
-                $driver["name"]
-            );
-            ?>
-
+            Driver Information
         </h2>
 
-        <p>
-            Driver Portal
-        </p>
+        <div class="pass-row">
 
-        <p>
+            <strong>
+                Driver ID
+            </strong>
 
-            Account Status:
-
-            <span class="status
-                <?php
-
-                if (
-                    $driver["status"] === "Verified"
-                ) {
-
-                    echo "verified";
-
-                } elseif (
-                    $driver["status"] === "Inactive"
-                ) {
-
-                    echo "inactive";
-
-                } else {
-
-                    echo "pending";
-                }
-
-                ?>"
-            >
-
-                <?php
-                echo htmlspecialchars(
-                    $driver["status"]
-                );
-                ?>
-
+            <span>
+                <?= e($driver["id"]) ?>
             </span>
 
-        </p>
+        </div>
 
-    </section>
+        <div class="pass-row">
+
+            <strong>
+                Name
+            </strong>
+
+            <span>
+                <?= e($driver["name"]) ?>
+            </span>
+
+        </div>
+
+        <div class="pass-row">
+
+            <strong>
+                Phone
+            </strong>
+
+            <span>
+                <?= e($driver["phone"]) ?>
+            </span>
+
+        </div>
+
+        <div class="pass-row">
+
+            <strong>
+                Email
+            </strong>
+
+            <span>
+                <?= e($driver["email"] ?: "Not provided") ?>
+            </span>
+
+        </div>
+
+        <div class="pass-row">
+
+            <strong>
+                Address
+            </strong>
+
+            <span>
+                <?= e($driver["address"]) ?>
+            </span>
+
+        </div>
+
+        <div class="pass-row">
+
+            <strong>
+                Driving License
+            </strong>
+
+            <span>
+                <?= e($driver["driving_license"]) ?>
+            </span>
+
+        </div>
+
+        <div class="pass-row">
+
+            <strong>
+                Status
+            </strong>
+
+            <span
+                class="status
+                <?= strtolower(e($driver["status"])) ?>"
+            >
+                <?= e($driver["status"]) ?>
+            </span>
+
+        </div>
+
+        <a
+            href="profile.php"
+            class="dashboard-button"
+        >
+            My Profile
+        </a>
+
+    </div>
 
 
-    <!-- ================================================= -->
-    <!-- DRIVER PASS / ASSIGNED TAXI -->
-    <!-- ================================================= -->
+    <!-- =================================================
+         ASSIGNED TAXI
+         ================================================= -->
 
     <?php if ($assignment): ?>
 
-        <section>
+        <div class="pass-card">
 
-            <div class="pass-card">
+            <div class="pass-title">
+                Assigned Taxi
+            </div>
 
-                <div class="pass-title">
-                    🚕 Driver Assignment Pass
-                </div>
+            <div class="pass-row">
 
+                <strong>
+                    Driver
+                </strong>
 
-                <div class="pass-row">
+                <span>
+                    <?= e($driver["name"]) ?>
+                </span>
 
-                    <strong>
-                        Driver
-                    </strong>
+            </div>
 
-                    <span>
-                        <?php
-                        echo htmlspecialchars(
-                            $driver["name"]
-                        );
-                        ?>
-                    </span>
+            <div class="pass-row">
 
-                </div>
+                <strong>
+                    Phone
+                </strong>
 
+                <span>
+                    <?= e($driver["phone"]) ?>
+                </span>
 
-                <div class="pass-row">
+            </div>
 
-                    <strong>
-                        Phone
-                    </strong>
+            <div class="pass-row">
 
-                    <span>
-                        <?php
-                        echo htmlspecialchars(
-                            $driver["phone"]
-                        );
-                        ?>
-                    </span>
+                <strong>
+                    Taxi
+                </strong>
 
-                </div>
+                <span>
+                    <?= e($assignment["brand"]) ?>
+                    <?= e($assignment["model"]) ?>
+                </span>
 
+            </div>
 
-                <div class="pass-row">
+            <div class="pass-row">
 
-                    <strong>
-                        Taxi
-                    </strong>
+                <strong>
+                    Registration Number
+                </strong>
 
-                    <span>
+                <span>
+                    <?= e($assignment["registration_number"]) ?>
+                </span>
 
-                        <?php
+            </div>
 
-                        echo htmlspecialchars(
-                            $assignment["brand"]
-                            . " "
-                            . $assignment["model"]
-                        );
+            <div class="pass-row">
 
-                        ?>
+                <strong>
+                    Daily Rent
+                </strong>
 
-                    </span>
+                <span>
+                    ₹<?= number_format(
+                        (float) $assignment["rent"],
+                        2
+                    ) ?>
+                </span>
 
-                </div>
+            </div>
 
-
-                <div class="pass-row">
-
-                    <strong>
-                        Registration Number
-                    </strong>
-
-                    <span>
-
-                        <?php
-
-                        echo htmlspecialchars(
-                            $assignment[
-                                "registration_number"
-                            ]
-                        );
-
-                        ?>
-
-                    </span>
-
-                </div>
-
+            <?php if ($agreement): ?>
 
                 <div class="pass-row">
 
                     <strong>
-                        Daily Rent
+                        Agreement Rent
                     </strong>
 
                     <span>
-
-                        ₹<?php
-
-                        echo number_format(
-                            (float)
-                            $assignment["rent"],
+                        ₹<?= number_format(
+                            (float) $agreement["rent"],
                             2
-                        );
-
-                        ?>
-
-                        / day
-
+                        ) ?>
                     </span>
 
                 </div>
 
+            <?php endif; ?>
 
-                <div class="pass-row">
+            <div class="pass-row">
 
-                    <strong>
-                        Assignment Status
-                    </strong>
+                <strong>
+                    Assignment Status
+                </strong>
 
-                    <span class="status verified">
-
-                        <?php
-
-                        echo htmlspecialchars(
-                            $assignment[
-                                "assignment_status"
-                            ]
-                        );
-
-                        ?>
-
-                    </span>
-
-                </div>
-
-
-                <div class="pass-row">
-
-                    <strong>
-                        Assigned At
-                    </strong>
-
-                    <span>
-
-                        <?php
-
-                        echo htmlspecialchars(
-                            $assignment[
-                                "assigned_at"
-                            ]
-                        );
-
-                        ?>
-
-                    </span>
-
-                </div>
+                <span class="status accepted">
+                    <?= e($assignment["assignment_status"]) ?>
+                </span>
 
             </div>
 
-        </section>
+            <div class="pass-row">
 
+                <strong>
+                    Assigned At
+                </strong>
 
-    <?php else: ?>
-
-        <section>
-
-            <div class="dashboard-card">
-
-                <h2>
-                    No Taxi Assigned
-                </h2>
-
-                <p>
-                    You currently do not have a taxi assigned.
-                </p>
-
-                <p>
-                    Once the admin verifies your registration
-                    and assigns a taxi, the assignment will
-                    appear here.
-                </p>
+                <span>
+                    <?= e($assignment["assigned_at"]) ?>
+                </span>
 
             </div>
 
-        </section>
-
-    <?php endif; ?>
+        </div>
 
 
-    <!-- ================================================= -->
-    <!-- AGREEMENT -->
-    <!-- ================================================= -->
+        <!-- =================================================
+             RENT PAYMENT / UPI
+             ================================================= -->
 
-    <?php if ($agreement): ?>
-
-        <section>
+        <div class="payment-card">
 
             <h2>
-                Taxi Agreement
+                Rent Payment
             </h2>
 
-            <div class="agreement-box">
+            <div class="payment-layout">
 
-                <h3>
-                    Agreement Details
-                </h3>
+                <div class="payment-info">
 
-
-                <div class="pass-row">
-
-                    <strong>
-                        Agreement ID
-                    </strong>
-
-                    <span>
-                        #<?php
-                        echo (int)
-                            $agreement["id"];
-                        ?>
-                    </span>
-
-                </div>
-
-
-                <div class="pass-row">
-
-                    <strong>
-                        Start Date
-                    </strong>
-
-                    <span>
-                        <?php
-                        echo htmlspecialchars(
-                            $agreement["start_date"]
-                        );
-                        ?>
-                    </span>
-
-                </div>
-
-
-                <div class="pass-row">
-
-                    <strong>
-                        End Date
-                    </strong>
-
-                    <span>
-                        <?php
-                        echo htmlspecialchars(
-                            $agreement["end_date"]
-                        );
-                        ?>
-                    </span>
-
-                </div>
-
-
-                <div class="pass-row">
-
-                    <strong>
-                        Rent
-                    </strong>
-
-                    <span>
-
-                        ₹<?php
-
-                        echo number_format(
-                            (float)
-                            $agreement["rent"],
-                            2
-                        );
-
-                        ?>
-
-                    </span>
-
-                </div>
-
-
-                <div class="pass-row">
-
-                    <strong>
-                        Agreement Status
-                    </strong>
-
-                    <span>
-
-                        <?php if (
-                            $agreement["accepted"] == 1
-                        ): ?>
-
-                            <span class="accepted">
-                                Accepted
-                            </span>
-
-                        <?php else: ?>
-
-                            <span class="waiting">
-                                Pending Acceptance
-                            </span>
-
-                        <?php endif; ?>
-
-                    </span>
-
-                </div>
-
-
-                <?php if (
-                    $agreement["accepted"] == 0
-                ): ?>
-
-                    <div class="agreement-warning">
+                    <div class="payment-row">
 
                         <strong>
-                            Action Required
+                            Taxi
                         </strong>
 
+                        <span>
+                            <?= e(
+                                $assignment["registration_number"]
+                            ) ?>
+                        </span>
+
+                    </div>
+
+                    <div class="payment-row">
+
+                        <strong>
+                            Rent Amount
+                        </strong>
+
+                        <span>
+                            ₹<?= number_format(
+                                $payment_amount,
+                                2
+                            ) ?>
+                        </span>
+
+                    </div>
+
+                    <div class="payment-row">
+
+                        <strong>
+                            Payment Method
+                        </strong>
+
+                        <span>
+                            UPI
+                        </span>
+
+                    </div>
+
+                    <div class="payment-row">
+
+                        <strong>
+                            Payment Status
+                        </strong>
+
+                        <span
+                            class="<?= e(
+                                $payment_status_class
+                            ) ?>"
+                        >
+                            <?= e($payment_status) ?>
+                        </span>
+
+                    </div>
+
+                    <?php if ($payment): ?>
+
+                        <div class="payment-row">
+
+                            <strong>
+                                Last Payment
+                            </strong>
+
+                            <span>
+                                <?= e(
+                                    $payment["payment_date"]
+                                ) ?>
+                            </span>
+
+                        </div>
+
+                        <div class="payment-row">
+
+                            <strong>
+                                Last Payment Amount
+                            </strong>
+
+                            <span>
+                                ₹<?= number_format(
+                                    (float) $payment["amount"],
+                                    2
+                                ) ?>
+                            </span>
+
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="payment-row">
+
+                            <strong>
+                                Last Payment
+                            </strong>
+
+                            <span>
+                                No payment recorded
+                            </span>
+
+                        </div>
+
+                    <?php endif; ?>
+
+                </div>
+
+
+                <?php if ($payment_status !== "Paid"): ?>
+
+                    <div class="qr-box">
+
+                        <div class="qr-title">
+                            Scan to Pay
+                        </div>
+
+                        <img
+                            src="<?= e($qr_url) ?>"
+                            alt="UPI Payment QR Code"
+                        >
+
+                        <div class="qr-amount">
+                            ₹<?= number_format(
+                                $payment_amount,
+                                2
+                            ) ?>
+                        </div>
+
                         <p>
-                            Please review the agreement
-                            details above and accept the
-                            agreement to continue.
+                            Pay using any supported UPI app.
                         </p>
-
-
-                        <form method="POST">
-
-                            <?php csrf_field(); ?>
-
-                            <input
-                                type="hidden"
-                                name="agreement_id"
-                                value="<?php
-                                    echo (int)
-                                        $agreement["id"];
-                                ?>"
-                            >
-
-                            <button
-                                type="submit"
-                                name="accept_agreement"
-                                class="accept-button"
-                            >
-                                Accept Agreement
-                            </button>
-
-                        </form>
 
                     </div>
 
                 <?php else: ?>
 
-                    <p class="accepted">
-                        ✓ Agreement accepted
+                    <div class="qr-box">
 
-                        <?php if (
-                            !empty(
-                                $agreement["accepted_at"]
-                            )
-                        ): ?>
+                        <div class="qr-title paid">
+                            Payment Completed
+                        </div>
 
-                            on
+                        <p>
+                            Your latest payment is marked
+                            as Paid.
+                        </p>
 
-                            <?php
-                            echo htmlspecialchars(
-                                $agreement[
-                                    "accepted_at"
-                                ]
-                            );
-                            ?>
-
-                        <?php endif; ?>
-
-                    </p>
+                    </div>
 
                 <?php endif; ?>
 
             </div>
 
-        </section>
+
+            <div class="payment-note">
+
+                <strong>
+                    Payment note:
+                </strong>
+
+                This QR is a UPI payment link.
+                The current system does not automatically
+                verify the UPI transaction. Payment status
+                will only change when a payment record is
+                received/updated in the system.
+
+            </div>
+
+        </div>
+
+    <?php else: ?>
+
+        <div class="empty-box">
+
+            <h2>
+                No Taxi Assigned
+            </h2>
+
+            <p>
+                You currently do not have an active taxi
+                assignment.
+            </p>
+
+        </div>
 
     <?php endif; ?>
 
 
-    <!-- ================================================= -->
-    <!-- DRIVER SERVICES -->
-    <!-- ================================================= -->
+    <!-- =================================================
+         AGREEMENT
+         ================================================= -->
 
-    <section>
+    <?php if ($agreement): ?>
 
-        <h2>
-            Driver Services
-        </h2>
+        <div class="agreement-box">
 
+            <h2>
+                Agreement
+            </h2>
 
-        <div class="dashboard-grid">
+            <div class="pass-row">
 
+                <strong>
+                    Agreement ID
+                </strong>
 
-            <!-- RENT -->
+                <span>
+                    <?= e($agreement["id"]) ?>
+                </span>
 
-            <div class="dashboard-card">
+            </div>
 
-                <h3>
-                    Rent Payment
-                </h3>
+            <div class="pass-row">
 
-                <p>
-                    View your taxi rent and payment
-                    records.
-                </p>
+                <strong>
+                    Start Date
+                </strong>
 
-                <a
-                    class="dashboard-button"
-                    href="payments.php"
-                >
-                    Rent Payments
-                </a>
+                <span>
+                    <?= e($agreement["start_date"]) ?>
+                </span>
+
+            </div>
+
+            <div class="pass-row">
+
+                <strong>
+                    End Date
+                </strong>
+
+                <span>
+                    <?= e($agreement["end_date"]) ?>
+                </span>
+
+            </div>
+
+            <div class="pass-row">
+
+                <strong>
+                    Rent
+                </strong>
+
+                <span>
+                    ₹<?= number_format(
+                        (float) $agreement["rent"],
+                        2
+                    ) ?>
+                </span>
+
+            </div>
+
+            <div class="pass-row">
+
+                <strong>
+                    Agreement Status
+                </strong>
+
+                <span>
+                    <?= e($agreement["status"]) ?>
+                </span>
 
             </div>
 
 
-            <!-- TAXI AVAILABILITY -->
+            <?php if ((int) $agreement["accepted"] === 1): ?>
 
-            <div class="dashboard-card">
+                <div class="pass-row">
 
-                <h3>
-                    Taxi Availability
-                </h3>
+                    <strong>
+                        Acceptance
+                    </strong>
 
-                <p>
-                    Check currently available taxis.
-                </p>
+                    <span class="accepted">
+                        Accepted
+                    </span>
 
-                <a
-                    class="dashboard-button"
-                    href="../index2.php#taxis"
-                >
-                    View Available Taxis
-                </a>
+                </div>
 
-            </div>
+                <?php if ($agreement["accepted_at"]): ?>
+
+                    <div class="pass-row">
+
+                        <strong>
+                            Accepted At
+                        </strong>
+
+                        <span>
+                            <?= e(
+                                $agreement["accepted_at"]
+                            ) ?>
+                        </span>
+
+                    </div>
+
+                <?php endif; ?>
 
 
-            <!-- PROFILE -->
+            <?php else: ?>
 
-            <div class="dashboard-card">
+                <div class="agreement-warning">
 
-                <h3>
-                    My Profile
-                </h3>
+                    <strong>
+                        Action Required
+                    </strong>
 
-                <p>
-                    View your registered driver
-                    information.
-                </p>
+                    <p>
+                        Please review and accept your active
+                        agreement.
+                    </p>
 
-                <a
-                    class="dashboard-button"
-                    href="profile.php"
-                >
-                    View Profile
-                </a>
+                    <form
+                        method="POST"
+                        action=""
+                    >
 
-            </div>
+                        <?= csrf_field() ?>
 
+                        <input
+                            type="hidden"
+                            name="agreement_id"
+                            value="<?= e(
+                                $agreement["id"]
+                            ) ?>"
+                        >
+
+                        <button
+                            type="submit"
+                            name="accept_agreement"
+                            class="accept-button"
+                        >
+                            Accept Agreement
+                        </button>
+
+                    </form>
+
+                </div>
+
+            <?php endif; ?>
 
         </div>
 
-    </section>
+    <?php elseif ($assignment): ?>
 
+        <div class="agreement-box">
+
+            <h2>
+                Agreement
+            </h2>
+
+            <p>
+                No active agreement has been created for
+                your current taxi assignment yet.
+            </p>
+
+        </div>
+
+    <?php endif; ?>
+
+
+    <!-- =================================================
+         DRIVER SERVICES
+         ================================================= -->
+
+    <h2 style="margin-top:30px;">
+        Driver Services
+    </h2>
+
+    <div class="service-grid">
+
+        <div class="service-card">
+
+            <h3>
+                Rent Payment
+            </h3>
+
+            <p>
+                View your current rent payment status
+                and payment information.
+            </p>
+
+            <a
+                href="payments.php"
+                class="dashboard-button"
+            >
+                Payment History
+            </a>
+
+        </div>
+
+
+        <div class="service-card">
+
+            <h3>
+                Taxi Availability
+            </h3>
+
+            <p>
+                View currently available taxis.
+            </p>
+
+            <a
+                href="../index2.php#taxis"
+                class="dashboard-button"
+            >
+                View Taxis
+            </a>
+
+        </div>
+
+
+        <div class="service-card">
+
+            <h3>
+                My Profile
+            </h3>
+
+            <p>
+                View and manage your driver profile.
+            </p>
+
+            <a
+                href="profile.php"
+                class="dashboard-button"
+            >
+                Open Profile
+            </a>
+
+        </div>
+
+
+        <div class="service-card">
+
+            <h3>
+                Documents
+            </h3>
+
+            <p>
+                View your driver document information.
+            </p>
+
+            <a
+                href="documents.php"
+                class="dashboard-button"
+            >
+                My Documents
+            </a>
+
+        </div>
+
+    </div>
 
 </main>
 
 
-<!-- ================================================= -->
-<!-- FOOTER -->
-<!-- ================================================= -->
-
 <footer>
 
     <p>
-        &copy; 2026 Taxi Management System
+        Taxi Management System
     </p>
 
 </footer>
-
 
 </body>
 

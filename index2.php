@@ -2,13 +2,79 @@
 
 require_once "config.php";
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// ==============================
-// AVAILABLE TAXIS
-// ==============================
+
+/* =========================================================
+   CHECK DRIVER STATUS
+   ========================================================= */
+
+$driver_logged_in = false;
+$driver_verified = false;
+
+if (isset($_SESSION["driver_id"])) {
+
+    $driver_id = (int) $_SESSION["driver_id"];
+
+    $driver_status_sql = "
+        SELECT status
+        FROM drivers
+        WHERE id = ?
+        LIMIT 1
+    ";
+
+    $driver_status_stmt = mysqli_prepare(
+        $conn,
+        $driver_status_sql
+    );
+
+    if ($driver_status_stmt) {
+
+        mysqli_stmt_bind_param(
+            $driver_status_stmt,
+            "i",
+            $driver_id
+        );
+
+        mysqli_stmt_execute(
+            $driver_status_stmt
+        );
+
+        $driver_status_result =
+            mysqli_stmt_get_result(
+                $driver_status_stmt
+            );
+
+        $driver_data =
+            mysqli_fetch_assoc(
+                $driver_status_result
+            );
+
+        mysqli_stmt_close(
+            $driver_status_stmt
+        );
+
+        if ($driver_data) {
+
+            $driver_logged_in = true;
+
+            if ($driver_data["status"] === "Verified") {
+                $driver_verified = true;
+            }
+        }
+    }
+}
+
+
+/* =========================================================
+   AVAILABLE TAXIS
+   ========================================================= */
 
 $sql = "
     SELECT
+        id,
         brand,
         model,
         registration_number,
@@ -51,25 +117,16 @@ $result = mysqli_query($conn, $sql);
         ============================== */
 
         .hero {
-
             text-align: center;
-
             padding: 40px 20px;
-
         }
-
 
         .hero h2 {
-
             margin-bottom: 10px;
-
         }
 
-
         .hero p {
-
             margin-bottom: 20px;
-
         }
 
 
@@ -78,47 +135,28 @@ $result = mysqli_query($conn, $sql);
         ============================== */
 
         .access-container {
-
             display: grid;
-
             grid-template-columns:
                 repeat(3, 1fr);
-
             gap: 20px;
-
         }
-
 
         .access-card {
-
             border: 1px solid #ddd;
-
             border-radius: 8px;
-
             padding: 20px;
-
             background: #fff;
-
         }
-
 
         .access-card h3 {
-
             margin-top: 0;
-
         }
 
-
         .access-card a {
-
             display: inline-block;
-
             margin-top: 10px;
-
             padding: 8px 14px;
-
             text-decoration: none;
-
         }
 
 
@@ -127,41 +165,107 @@ $result = mysqli_query($conn, $sql);
         ============================== */
 
         .taxi-container {
-
             display: grid;
-
             grid-template-columns:
                 repeat(3, 1fr);
-
             gap: 20px;
+        }
 
+        .taxi-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            background: #fff;
+        }
+
+        .taxi-card h3 {
+            margin-top: 0;
+        }
+
+        .rent {
+            font-weight: bold;
         }
 
 
-        .taxi-card {
+        /* ==============================
+           REQUEST BUTTON
+        ============================== */
 
-            border: 1px solid #ddd;
+        .request-button {
+            display: inline-block;
 
-            border-radius: 8px;
+            margin-top: 12px;
 
-            padding: 20px;
+            padding: 10px 16px;
+
+            background: #15803d;
+
+            color: #fff;
+
+            text-decoration: none;
+
+            border-radius: 6px;
+
+            font-weight: bold;
+        }
+
+        .request-button:hover {
+            background: #166534;
+        }
+
+
+        /* ==============================
+           LOGIN BUTTON
+        ============================== */
+
+        .login-button {
+            display: inline-block;
+
+            margin-top: 12px;
+
+            padding: 10px 16px;
 
             background: #fff;
 
+            color: #222;
+
+            text-decoration: none;
+
+            border: 1px solid #333;
+
+            border-radius: 6px;
         }
 
 
-        .taxi-card h3 {
+        /* ==============================
+           STATUS BUTTON
+        ============================== */
 
-            margin-top: 0;
+        .status-button {
+            display: inline-block;
 
-        }
+            margin-top: 12px;
 
+            padding: 10px 16px;
 
-        .rent {
+            background: #f3f4f6;
+
+            color: #555;
+
+            border: 1px solid #ccc;
+
+            border-radius: 6px;
 
             font-weight: bold;
+        }
 
+
+        .taxi-action-note {
+            margin-top: 10px;
+
+            font-size: 14px;
+
+            color: #666;
         }
 
 
@@ -173,9 +277,7 @@ $result = mysqli_query($conn, $sql);
 
             .access-container,
             .taxi-container {
-
                 grid-template-columns: 1fr;
-
             }
 
         }
@@ -274,8 +376,7 @@ $result = mysqli_query($conn, $sql);
 
             <p>
                 Manage drivers, taxis, assignments,
-                agreements, maintenance, fines
-                and payments.
+                agreements and payments.
             </p>
 
 
@@ -369,7 +470,7 @@ $result = mysqli_query($conn, $sql);
 
                         <?php
 
-                        echo htmlspecialchars(
+                        echo e(
                             $taxi["brand"]
                             . " "
                             . $taxi["model"]
@@ -388,7 +489,7 @@ $result = mysqli_query($conn, $sql);
 
                         <?php
 
-                        echo htmlspecialchars(
+                        echo e(
                             $taxi[
                                 "registration_number"
                             ]
@@ -406,7 +507,7 @@ $result = mysqli_query($conn, $sql);
                         ₹<?php
 
                         echo number_format(
-                            (float)$taxi["rent"],
+                            (float) $taxi["rent"],
                             2
                         );
 
@@ -415,6 +516,73 @@ $result = mysqli_query($conn, $sql);
                         / day
 
                     </p>
+
+
+                    <!-- ==============================
+                         DRIVER ACTION
+                    ============================== -->
+
+                    <?php if ($driver_verified): ?>
+
+
+                        <!-- VERIFIED DRIVER -->
+
+                        <a
+                            href="driver/taxi_request.php?taxi_id=<?= (int) $taxi["id"] ?>"
+                            class="request-button"
+                        >
+                            Request This Taxi
+                        </a>
+
+
+                        <p class="taxi-action-note">
+
+                            Your request will be sent to
+                            admin for approval.
+
+                        </p>
+
+
+                    <?php elseif ($driver_logged_in): ?>
+
+
+                        <!-- LOGGED IN BUT NOT VERIFIED -->
+
+                        <span class="status-button">
+                            Driver Verification Pending
+                        </span>
+
+
+                        <p class="taxi-action-note">
+
+                            You can request a taxi after
+                            admin verifies your driver account.
+
+                        </p>
+
+
+                    <?php else: ?>
+
+
+                        <!-- NOT LOGGED IN -->
+
+                        <a
+                            href="driver/login.php"
+                            class="login-button"
+                        >
+                            Login as Driver to Request
+                        </a>
+
+
+                        <p class="taxi-action-note">
+
+                            Driver login is required
+                            to request a taxi.
+
+                        </p>
+
+
+                    <?php endif; ?>
 
 
                 </article>

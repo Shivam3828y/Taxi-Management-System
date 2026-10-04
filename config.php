@@ -3,10 +3,8 @@
 // -----------------------------------------------------------
 // Environment
 // -----------------------------------------------------------
-// Set to true only on your local dev machine. Keep false on any
-// server real users can reach — showing raw PHP errors leaks
-// database structure and file paths.
-define('APP_DEBUG', false);
+
+define('APP_DEBUG', true);
 
 if (APP_DEBUG) {
     error_reporting(E_ALL);
@@ -18,31 +16,43 @@ if (APP_DEBUG) {
     ini_set('error_log', __DIR__ . '/php-error.log');
 }
 
+
 // -----------------------------------------------------------
 // Session security
 // -----------------------------------------------------------
+
 ini_set('session.cookie_httponly', 1);
 ini_set('session.use_strict_mode', 1);
+
 // Uncomment when serving over HTTPS in production:
 // ini_set('session.cookie_secure', 1);
+
 
 // -----------------------------------------------------------
 // Database connection
 // -----------------------------------------------------------
+
 $host = "localhost";
 $username = "root";
-$password = "";
+$password = "shivam@123";
 $database = "taxi_management";
 
-$conn = mysqli_connect($host, $username, $password, $database);
+$conn = mysqli_connect(
+    $host,
+    $username,
+    $password,
+    $database
+);
 
 if (!$conn) {
     die("Database connection failed: " . mysqli_connect_error());
 }
 
+
 // -----------------------------------------------------------
-// Shared security helpers (CSRF tokens, output escaping, password hashing)
+// Shared security helpers
 // -----------------------------------------------------------
+
 require_once __DIR__ . "/security.php";
 
 ?>
