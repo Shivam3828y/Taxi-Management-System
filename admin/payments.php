@@ -480,7 +480,23 @@ if ($stmt) {
             Automatic Payment Records
         </strong>
 
+<<<<<<< HEAD
        
+=======
+        <div>
+
+            Payment status shown here is read from the
+            <code>payments</code> table.
+
+            When the UPI payment gateway and webhook are
+            connected, successful payments will appear
+            here automatically.
+
+            Admin does not need to manually mark a
+            successful online payment as Paid.
+
+        </div>
+>>>>>>> 21d202221995cc0ce9792faca7d37b1ccb23b3b4
 
     </div>
 
