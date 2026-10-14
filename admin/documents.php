@@ -1,0 +1,7 @@
+<?php
+require_once __DIR__ . '/../config.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
+if (!isset($_SESSION['admin_id'])) { header('Location: login.php'); exit; }
+$result = mysqli_query($conn, 'SELECT name, phone, driving_license, document_type, document_number, status, created_at FROM drivers ORDER BY created_at DESC');
+?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Driver Documents | Taxi Management System</title><link rel="stylesheet" href="../css/style.css"></head><body>
+<header><h1>Taxi Management System</h1></header><main class="container"><nav><a href="dashboard.php">Dashboard</a> | <a href="drivers.php">Drivers</a> | <a href="logout.php">Logout</a></nav><section class="card"><h2>Driver Documents</h2><p>Review document details submitted during driver registration.</p><table><thead><tr><th>Driver</th><th>Phone</th><th>License</th><th>Document</th><th>Status</th><th>Submitted</th></tr></thead><tbody><?php while ($driver = mysqli_fetch_assoc($result)): ?><tr><td><?= e($driver['name']) ?></td><td><?= e($driver['phone']) ?></td><td><?= e($driver['driving_license']) ?></td><td><?= e(($driver['document_type'] ?: '—') . ($driver['document_number'] ? ': ' . $driver['document_number'] : '')) ?></td><td><?= e($driver['status']) ?></td><td><?= e($driver['created_at']) ?></td></tr><?php endwhile; ?></tbody></table></section></main></body></html>
