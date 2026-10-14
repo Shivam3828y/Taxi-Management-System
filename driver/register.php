@@ -1,16 +1,14 @@
 <?php
 
-<<<<<<< HEAD
 require_once "../config.php";
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-=======
+
 session_start();
 
 require_once "../config.php";
->>>>>>> 21d202221995cc0ce9792faca7d37b1ccb23b3b4
 
 $message = "";
 $error = "";
